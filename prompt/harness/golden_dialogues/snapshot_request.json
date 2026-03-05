@@ -4,6 +4,6 @@
   "events": [
     {"type": "speech", "role": "user", "text": "Look at this node, it seems off."},
     {"type": "tool_call", "name": "request_snapshot_burst", "arguments": {"reason": "user pointed at node", "duration_s": 8, "fps": 1.0}},
-    {"type": "speech", "role": "assistant", "text": "Got it, sending a quick look. I’ll respond after I see it."}
+    {"type": "speech", "role": "assistant", "text": "Got it, sending a quick look. I'll respond after I see it."}
   ]
 }

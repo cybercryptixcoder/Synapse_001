@@ -3,7 +3,7 @@
   "description": "Assistant references wrong ID, user corrects; assistant fixes reference and patch.",
   "events": [
     {"type": "speech", "role": "assistant", "text": "Check the highlight on merge-step-2."},
-    {"type": "speech", "role": "user", "text": "That ID doesn’t exist; it's merge-steps."},
+    {"type": "speech", "role": "user", "text": "That ID doesn't exist; it's merge-steps."},
     {"type": "speech", "role": "assistant", "text": "Thanks. I meant merge-steps."},
     {"type": "tool_call", "name": "emit_canvas_patches", "arguments": {"patches": [
       {"op": "update", "id": "merge-steps", "path": "/steps/1/highlight", "value": true}

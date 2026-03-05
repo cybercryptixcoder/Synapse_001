@@ -3,10 +3,10 @@
 Validates Synapse System Prompt v1.0 behavior using golden dialogues and session logs.
 
 ## Files
-- `../v1.0.txt` — system prompt.
-- `golden_dialogues/` — expected event skeletons (5 cases).
-- `artifacts/sample_merge_sort_session.jsonl` — example log that should pass `merge_sort_walkthrough` checks.
-- `run_harness.py` — assertion runner.
+- `../v1.0.txt` - system prompt.
+- `golden_dialogues/` - expected event skeletons (5 cases).
+- `artifacts/sample_merge_sort_session.jsonl` - example log that should pass `merge_sort_walkthrough` checks.
+- `run_harness.py` - assertion runner.
 
 ## Log format (JSONL)
 Each line represents one event:
@@ -17,7 +17,7 @@ Each line represents one event:
 1) Assistant speech contains no code tokens (heuristic regex).
 2) Tool calls match schema; IDs must be added before update/remove.
 3) Every tool call is preceded by an assistant speech since the last tool call.
-4) Optional: session follows a golden’s event skeleton (type/order/name).
+4) Optional: session follows a golden's event skeleton (type/order/name).
 
 ## Golden dialogues
 - merge_sort_walkthrough

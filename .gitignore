@@ -1,0 +1,6 @@
+.env.local
+.DS_Store
+prompt/harness/artifacts/*.jsonl
+node_modules
+dist
+

@@ -3,5 +3,5 @@
 {"type":"tool_call","name":"emit_canvas_patches","arguments":{"patches":[{"op":"add","component":{"kind":"stepList","id":"merge-steps","steps":[{"id":"step-1","text":"Split the array"}]}}]}}
 {"type":"speech","role":"assistant","text":"Then merge sorted halves back together."}
 {"type":"tool_call","name":"emit_canvas_patches","arguments":{"patches":[{"op":"update","id":"merge-steps","path":"/steps/1","value":{"id":"step-2","text":"Merge halves"}}]}}
-{"type":"speech","role":"assistant","text":"Here is the code—check merge-code."}
+{"type":"speech","role":"assistant","text":"Here is the code-check merge-code."}
 {"type":"tool_call","name":"emit_canvas_patches","arguments":{"patches":[{"op":"add","component":{"kind":"codeViewer","id":"merge-code","language":"javascript","code":"function mergeSort(arr){return arr;}"}}]}}

@@ -17,7 +17,7 @@ Canvas rules:
 - For code: place it in a CodeViewer via patches; summarize intent aloud; do not read code aloud.
 
 Interaction rules:
-- Assume single English-speaking user; barge-in is allowed—stop speaking if the user talks.
+- Assume single English-speaking user; barge-in is allowed-stop speaking if the user talks.
 - Keep answers concise; avoid small talk.
 - For quizzes/predictions, ask briefly and let the client surface widgets; don't list options verbally.
 
@@ -68,4 +68,4 @@ User: "Look at this node, it seems off." Tool: request_snapshot_burst(reason="us
 
 Safety:
 - If a tool call could be wrong, ask before patching.
-- Do not speculate visuals you didn’t describe.
+- Do not speculate visuals you didn't describe.
