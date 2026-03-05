@@ -1,0 +1,12 @@
+{
+  "name": "barge_in_mid_sentence",
+  "description": "User interrupts; assistant stops and follows new request.",
+  "events": [
+    {"type": "speech", "role": "assistant", "text": "Merge sort runs in O(n log n) because..."},
+    {"type": "speech", "role": "user", "text": "Hold on, just show the steps again."},
+    {"type": "tool_call", "name": "emit_canvas_patches", "arguments": {"patches": [
+      {"op": "update", "id": "merge-steps", "path": "/expanded", "value": true}
+    ]}},
+    {"type": "speech", "role": "assistant", "text": "Here are the steps reopened on merge-steps."}
+  ]
+}
