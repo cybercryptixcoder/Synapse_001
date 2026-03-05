@@ -14,6 +14,10 @@ npm run prompt:ci       # prompt harness gate
 - `.env.local` (already present) should include:
   - `GEMINI_API_KEY=...` (for server-side scripts or Node tools)
   - `VITE_GEMINI_API_KEY=...` (for the browser app Live mode; if omitted, the app runs in mock mode)
+  - `VITE_FORCE_MOCK=true` (optional) to force mock mode even if a key is present)
+
+### SDK
+- Live uses `@google/genai` (not the deprecated `@google/generative-ai`). Run `npm install` after pulling to update `node_modules` and `package-lock.json`.
 
 ### Live connector
 - Code in `live_connector/connector.ts` uses the Google Gen AI SDK with the API key.
