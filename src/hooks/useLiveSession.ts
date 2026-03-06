@@ -16,6 +16,9 @@ export type LiveSessionHandle = {
   status: string;
   sendAudio?: (chunk: ArrayBuffer) => void;
   setMode: (m: Mode) => void;
+  sessionReady: boolean;
+  wsState: string;
+  retry: () => void;
 };
 
 const MOCK_DELAY_MS = 400;
@@ -28,6 +31,8 @@ export function useLiveSession(
   const [status, setStatus] = useState<string>("connecting");
   const [sendAudioFn, setSendAudioFn] = useState<((c: ArrayBuffer) => void) | undefined>(undefined);
   const liveSessionRef = useRef<{ close: () => Promise<void>; sendAudio?: (c: ArrayBuffer) => void } | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [wsState, setWsState] = useState<string>("idle");
 
   // FIX: Store handlers in a ref so they don't trigger infinite React loops from the parent component
   const handlersRef = useRef(handlers);
@@ -39,9 +44,23 @@ export function useLiveSession(
     setStatus("mock-session");
     handlersRef.current.onStatus?.("mock-session");
     setSendAudioFn(undefined);
+    setSessionReady(false);
+    setWsState("mock");
     setTimeout(() => handlersRef.current.onPatches?.(mockIntroPatches), MOCK_DELAY_MS);
     setTimeout(() => handlersRef.current.onPatches?.(mockPredictionPatches), MOCK_DELAY_MS + 900);
   }, []);
+
+  const cleanupSession = useCallback(() => {
+    liveSessionRef.current?.close().catch(() => undefined);
+    liveSessionRef.current = null;
+    setSendAudioFn(undefined);
+    setSessionReady(false);
+  }, []);
+
+  const retry = useCallback(() => {
+    cleanupSession();
+    setMode("live");
+  }, [cleanupSession]);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,11 +77,16 @@ export function useLiveSession(
       
       setStatus("live-session: connecting...");
       handlersRef.current.onStatus?.("live-session: connecting...");
+      setWsState("connecting");
 
       try {
         const { createLiveSession } = await import("../../live_connector/connector");
         
         const session = await createLiveSession(apiKey, {
+          onOpen: () => {
+            if (cancelled) return;
+            setWsState("open");
+          },
           onAudio: (pcmBuffer) => {
             // Forward audio safely to your builder's useAudioIO hook!
             handlersRef.current.onAudioFromModel?.(pcmBuffer);
@@ -83,8 +107,8 @@ export function useLiveSession(
             if (cancelled) return;
             setStatus(`live-session closed: ${reason ?? "normal"}`);
             handlersRef.current.onStatus?.(`live-session closed: ${reason ?? "normal"}`);
-            setMode("mock");
-            runMock();
+            setWsState("closed");
+            setSessionReady(false);
           },
         });
 
@@ -95,15 +119,17 @@ export function useLiveSession(
 
         liveSessionRef.current = session;
         setSendAudioFn(() => session.sendAudio);
+        setSessionReady(true);
+        setWsState("open");
         
         setStatus("live-session: ready");
         handlersRef.current.onStatus?.("live-session: ready");
       } catch (err) {
         console.error(err);
-        setStatus("live-session error; falling back to mock");
-        handlersRef.current.onStatus?.("live-session error; falling back to mock");
-        setMode("mock");
-        if (!cancelled) runMock();
+        setStatus("live-session error");
+        handlersRef.current.onStatus?.("live-session error");
+        setWsState("error");
+        setSessionReady(false);
       }
     };
 
@@ -115,10 +141,9 @@ export function useLiveSession(
 
     return () => {
       cancelled = true;
-      liveSessionRef.current?.close().catch(() => undefined);
-      setSendAudioFn(undefined);
+      cleanupSession();
     };
-  }, [mode, runMock]); // The dependency array is safely isolated now.
+  }, [cleanupSession, mode, runMock]);
 
-  return { mode, status, sendAudio: sendAudioFn, setMode };
+  return { mode, status, sendAudio: sessionReady ? sendAudioFn : undefined, setMode, sessionReady, wsState, retry };
 }

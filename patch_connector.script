@@ -1,0 +1,6 @@
+sed -i '' 's/"array"/"ARRAY"/g' live_connector/connector.ts
+sed -i '' 's/"object"/"OBJECT"/g' live_connector/connector.ts
+sed -i '' 's/"string"/"STRING"/g' live_connector/connector.ts
+sed -i '' 's/"integer"/"INTEGER"/g' live_connector/connector.ts
+sed -i '' 's/"number"/"NUMBER"/g' live_connector/connector.ts
+sed -i '' 's/\["AUDIO"\]/\["AUDIO"\] as any/g' live_connector/connector.ts

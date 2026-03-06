@@ -49,27 +49,29 @@ const SessionShell: React.FC = () => {
 
   const { enqueue } = useAudioPlayback(liveEnabled, setStatus);
 
-  const { mode, status: liveStatus, sendAudio, setMode } = useLiveSession(chosenMode, {
-    onPatches: dispatchPatches,
-    onStatus: setStatus,
-    onSnapshotRequest: ({ reason, durationMs, fps }) => {
-      startBurst({
-        reason,
-        durationMs,
-        fps,
-        onStatus: setStatus,
-        onCapture: (blob) => {
-          // TODO: send snapshot to model when SDK supports it; for now log size.
-          setStatus(`snapshot captured (${(blob.size / 1024).toFixed(1)} KB)`);
-        },
-      });
+  const { mode, status: liveStatus, sendAudio, setMode, sessionReady, wsState, retry } = useLiveSession(
+    chosenMode,
+    {
+      onPatches: dispatchPatches,
+      onStatus: setStatus,
+      onSnapshotRequest: ({ reason, durationMs, fps }) => {
+        startBurst({
+          reason,
+          durationMs,
+          fps,
+          onStatus: setStatus,
+          onCapture: (blob) => {
+            setStatus(`snapshot captured (${(blob.size / 1024).toFixed(1)} KB)`);
+          },
+        });
+      },
+      onAudioFromModel: (pcm) => enqueue(pcm),
     },
-    onAudioFromModel: (pcm) => enqueue(pcm),
-  });
+  );
 
   // Mic capture -> sendAudio when live ready
   useAudioIO({
-    enabled: liveEnabled && !!sendAudio,
+    enabled: liveEnabled && !!sendAudio && sessionReady,
     sendAudio,
     onStatus: setStatus,
   });
@@ -105,6 +107,8 @@ const SessionShell: React.FC = () => {
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <div className="pill">Status: {status}</div>
+          <div className="pill">WS: {wsState}</div>
+          <div className="pill">Ready: {sessionReady ? "yes" : "no"}</div>
           <button
             onClick={toggleMode}
             style={{
@@ -118,6 +122,21 @@ const SessionShell: React.FC = () => {
           >
             {mode === "live" ? "Switch to Mock" : "Switch to Live"}
           </button>
+          {mode === "live" && (
+            <button
+              onClick={retry}
+              style={{
+                border: "1px solid #cbd5e1",
+                background: "#fff",
+                borderRadius: 8,
+                padding: "8px 12px",
+                cursor: "pointer",
+                fontWeight: 600,
+              }}
+            >
+              Retry
+            </button>
+          )}
           <button
             onClick={handleExport}
             style={{

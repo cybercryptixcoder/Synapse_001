@@ -28,6 +28,7 @@ export function useAudioPlayback(enabled: boolean, onStatus?: (s: string) => voi
       ctxRef.current = null;
       queueRef.current = [];
       playingRef.current = false;
+      resumeAttachedRef.current = false;
     };
   }, [enabled]);
 
@@ -39,7 +40,7 @@ export function useAudioPlayback(enabled: boolean, onStatus?: (s: string) => voi
       if (!buf || !ctxRef.current) return;
       const floatData = int16ToFloat32(new Int16Array(buf));
       const audioBuffer = ctxRef.current.createBuffer(1, floatData.length, MODEL_SAMPLE_RATE);
-      audioBuffer.copyToChannel(floatData, 0, 0);
+      audioBuffer.copyToChannel(floatData as any, 0, 0);
       const source = ctxRef.current.createBufferSource();
       source.buffer = audioBuffer;
       source.onended = () => {
