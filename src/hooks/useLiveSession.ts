@@ -7,6 +7,7 @@ type LiveHandlers = {
   onStatus?: (s: string) => void;
   onSnapshotRequest?: (params: { reason?: string; durationMs?: number; fps?: number }) => void;
   onAudioFromModel?: (pcm: ArrayBuffer) => void;
+  onInterrupted?: () => void;
 };
 
 type Mode = "mock" | "live";
@@ -70,8 +71,6 @@ export function useLiveSession(
       if (!apiKey) {
         setStatus("missing-api-key");
         handlersRef.current.onStatus?.("missing-api-key");
-        setMode("mock");
-        if (!cancelled) runMock();
         return;
       }
       
@@ -102,6 +101,9 @@ export function useLiveSession(
                 fps: args?.fps ?? 1,
               });
             }
+          },
+          onInterrupted: () => {
+            handlersRef.current.onInterrupted?.();
           },
           onClose: (reason) => {
             if (cancelled) return;

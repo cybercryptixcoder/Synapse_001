@@ -47,7 +47,7 @@ const SessionShell: React.FC = () => {
 
   const [liveEnabled, setLiveEnabled] = useState<boolean>(chosenMode === "live");
 
-  const { enqueue } = useAudioPlayback(liveEnabled, setStatus);
+  const { enqueue, clear } = useAudioPlayback(liveEnabled, setStatus);
 
   const { mode, status: liveStatus, sendAudio, setMode, sessionReady, wsState, retry } = useLiveSession(
     chosenMode,
@@ -66,6 +66,7 @@ const SessionShell: React.FC = () => {
         });
       },
       onAudioFromModel: (pcm) => enqueue(pcm),
+      onInterrupted: () => clear(),
     },
   );
 
