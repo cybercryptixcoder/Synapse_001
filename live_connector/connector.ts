@@ -17,9 +17,10 @@ export type LiveCallbacks = {
   onClose: (reason?: string) => void;
   onOpen?: () => void;
   onInterrupted?: () => void;
+  onServerError?: (message: string) => void;
 };
 
-// Defaults align with the working standalone agent
+// Defaults align with the working standalone agent (the standalone demo that works)
 const DEFAULT_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 
 function buildTools() {
@@ -30,9 +31,9 @@ function buildTools() {
           name: "emit_canvas_patches",
           description: "Apply one or more canvas patches; never generate UI code.",
           parameters: {
-            type: "OBJECT",
+            type: "object",
             properties: {
-              patches: { type: "ARRAY", items: { type: "OBJECT" } },
+              patches: { type: "array", items: { type: "object" } },
             },
             required: ["patches"],
           },
@@ -41,11 +42,11 @@ function buildTools() {
           name: "request_snapshot_burst",
           description: "Ask client for low-FPS screen snapshots when you need visual confirmation.",
           parameters: {
-            type: "OBJECT",
+            type: "object",
             properties: {
-              reason: { type: "STRING" },
-              duration_s: { type: "INTEGER", default: 8 },
-              fps: { type: "NUMBER", default: 1.0 },
+              reason: { type: "string" },
+              duration_s: { type: "integer", default: 8 },
+              fps: { type: "number", default: 1.0 },
             },
             required: ["reason"],
           },
@@ -73,30 +74,36 @@ function decodeAudioParts(msg: any): ArrayBuffer[] {
   return buffers;
 }
 
-function decodeToolCalls(msg: any): Array<{ name: string; args: unknown }> {
-  const calls: Array<{ name: string; args: unknown }> = [];
+function decodeToolCalls(msg: any): Array<{ id?: string; name: string; args: unknown }> {
+  const calls: Array<{ id?: string; name: string; args: unknown }> = [];
   const modelTurn = msg?.serverContent?.modelTurn;
   const tc = modelTurn?.toolCalls ?? modelTurn?.toolCall ?? [];
   (Array.isArray(tc) ? tc : [tc]).forEach((call: any) => {
     if (!call) return;
     const name = call.name ?? call.functionCall?.name;
     const args = call.args ?? call.arguments ?? call.functionCall?.args;
-    if (name) calls.push({ name, args });
+    const id = call.id ?? call.functionCall?.id;
+    if (name) calls.push({ id, name, args });
   });
   (modelTurn?.parts ?? []).forEach((p: any) => {
     const fc = p?.functionCall;
-    if (fc?.name) calls.push({ name: fc.name, args: fc.args });
+    if (fc?.name) calls.push({ id: fc.id, name: fc.name, args: fc.args });
   });
   return calls;
+}
+
+function decodeServerError(msg: any): string | undefined {
+  return msg?.serverContent?.error?.message || msg?.error?.message || msg?.error;
 }
 
 export async function createLiveSession(apiKey: string, callbacks: LiveCallbacks): Promise<LiveSession> {
   if (!apiKey) throw new Error("GEMINI_API_KEY missing");
 
-  const apiVersion = import.meta.env.VITE_GEMINI_API_VERSION as string | undefined;
   const model = (import.meta.env.VITE_GEMINI_LIVE_MODEL as string | undefined) || DEFAULT_MODEL;
+  // Live WebSocket currently served on v1alpha; allow override
+  const apiVersion = (import.meta.env.VITE_GEMINI_API_VERSION as string | undefined) || "v1alpha";
 
-  const genAI = new GoogleGenAI({ apiKey, ...(apiVersion ? { apiVersion } : {}) });
+  const genAI = new GoogleGenAI({ apiKey, apiVersion });
   if (!genAI.live || typeof genAI.live.connect !== "function") {
     throw new Error("Live API not available in @google/genai version");
   }
@@ -110,40 +117,85 @@ export async function createLiveSession(apiKey: string, callbacks: LiveCallbacks
     console.warn("System prompt not found; proceeding without it", e);
   }
 
+  let isOpen = false;
+
   const session = await genAI.live.connect({
     model,
     config: {
       responseModalities: [Modality.AUDIO],
       tools: buildTools() as any,
-      // Ask model to emit text transcript alongside audio for debugging/tool alignment
-      outputAudioTranscription: {},
+      functionCallingConfig: "AUTO",
       ...(systemInstruction ? { systemInstruction } : {}),
     },
     callbacks: {
-      onopen: () => callbacks.onOpen?.(),
+      onopen: () => {
+        isOpen = true;
+        callbacks.onOpen?.();
+      },
       onmessage: (msg: any) => {
         try {
           if (msg?.serverContent?.interrupted) {
             callbacks.onInterrupted?.();
           }
+          const serverErr = decodeServerError(msg);
+          if (serverErr) {
+            console.error("Live server error:", serverErr);
+            callbacks.onServerError?.(serverErr);
+          }
           decodeAudioParts(msg).forEach((buf) => callbacks.onAudio(buf));
-          decodeToolCalls(msg).forEach((c) => callbacks.onToolCall(c.name, c.args));
+          const toolCalls = decodeToolCalls(msg);
+          toolCalls.forEach((c) => callbacks.onToolCall(c.name, c.args));
+          // Send tool responses in the documented shape (result payload).
+          if (toolCalls.length > 0) {
+            const responses = toolCalls
+              .filter((c) => c.id)
+              .map((c) => ({
+                id: c.id,
+                name: c.name,
+                response: { result: {} },
+              }));
+            if (responses.length > 0) {
+              try {
+                session.sendToolResponse({ toolResponse: { functionResponses: responses } });
+              } catch (err) {
+                console.warn("sendToolResponse failed", err);
+                callbacks.onServerError?.(`toolResponse failed: ${String(err)}`);
+              }
+            }
+          }
         } catch (e) {
           console.error("onmessage decode error", e);
         }
       },
-      onerror: (err: any) => callbacks.onClose(err?.message ?? "live session error"),
-      onclose: (evt: any) => callbacks.onClose(evt?.reason ?? "closed"),
+      onerror: (err: any) => {
+        isOpen = false;
+        const msg = err?.message ?? "live session error";
+        callbacks.onServerError?.(msg);
+        callbacks.onClose(msg);
+      },
+      onclose: (evt: any) => {
+        isOpen = false;
+        const reason = evt?.reason || "closed";
+        const code = typeof evt?.code === "number" ? evt.code : undefined;
+        const msg = code ? `close code ${code}: ${reason}` : reason;
+        callbacks.onServerError?.(msg);
+        callbacks.onClose(msg);
+      },
     },
   });
 
   const sendAudio = (chunk: ArrayBuffer) => {
     try {
+      if (!session || !isOpen) return;
       const b64 = arrayBufferToBase64(chunk);
       session.sendRealtimeInput({
-        audio: {
-          mimeType: "audio/pcm;rate=16000",
-          data: b64,
+        realtimeInput: {
+          mediaChunks: [
+            {
+              mimeType: "audio/pcm;rate=16000",
+              data: b64,
+            },
+          ],
         },
       });
     } catch (e) {

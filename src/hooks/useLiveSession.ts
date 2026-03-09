@@ -8,6 +8,7 @@ type LiveHandlers = {
   onSnapshotRequest?: (params: { reason?: string; durationMs?: number; fps?: number }) => void;
   onAudioFromModel?: (pcm: ArrayBuffer) => void;
   onInterrupted?: () => void;
+  onServerError?: (message: string) => void;
 };
 
 type Mode = "mock" | "live";
@@ -111,6 +112,11 @@ export function useLiveSession(
             handlersRef.current.onStatus?.(`live-session closed: ${reason ?? "normal"}`);
             setWsState("closed");
             setSessionReady(false);
+            setSendAudioFn(undefined);
+          },
+          onServerError: (message) => {
+            handlersRef.current.onStatus?.(`server-error: ${message}`);
+            handlersRef.current.onServerError?.(message);
           },
         });
 

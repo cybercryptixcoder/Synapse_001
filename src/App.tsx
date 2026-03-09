@@ -2,6 +2,7 @@ import React, { useMemo, useState, useCallback } from "react";
 import { CanvasProvider, useCanvas } from "./canvas/CanvasProvider";
 import { CanvasView } from "./components/CanvasView";
 import { FloatingInput } from "./components/FloatingInput";
+import { DevTerminal, DevLog } from "./components/DevTerminal";
 import { useWorkerRunner } from "./hooks/useWorkerRunner";
 import { useLiveSession } from "./hooks/useLiveSession";
 import { Patch } from "./canvas/types";
@@ -12,6 +13,15 @@ import { useSnapshotBurst } from "./hooks/useSnapshotBurst";
 const SessionShell: React.FC = () => {
   const { state, dispatchPatches } = useCanvas();
   const [status, setStatus] = useState<string>("connecting");
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [logs, setLogs] = useState<DevLog[]>([]);
+
+  const pushLog = useCallback(
+    (level: DevLog["level"], message: string) => {
+      setLogs((prev) => [...prev.slice(-499), { ts: Date.now(), level, message }]);
+    },
+    [],
+  );
 
   const { runCode } = useWorkerRunner((result) => {
     const patches: Patch[] = [
@@ -52,8 +62,14 @@ const SessionShell: React.FC = () => {
   const { mode, status: liveStatus, sendAudio, setMode, sessionReady, wsState, retry } = useLiveSession(
     chosenMode,
     {
-      onPatches: dispatchPatches,
-      onStatus: setStatus,
+      onPatches: (patches) => {
+        pushLog("info", `patches received: ${patches.length}`);
+        dispatchPatches(patches);
+      },
+      onStatus: (s) => {
+        setStatus(s);
+        pushLog("info", `status: ${s}`);
+      },
       onSnapshotRequest: ({ reason, durationMs, fps }) => {
         startBurst({
           reason,
@@ -62,11 +78,16 @@ const SessionShell: React.FC = () => {
           onStatus: setStatus,
           onCapture: (blob) => {
             setStatus(`snapshot captured (${(blob.size / 1024).toFixed(1)} KB)`);
+            pushLog("info", `snapshot captured ${blob.size} bytes`);
           },
         });
       },
       onAudioFromModel: (pcm) => enqueue(pcm),
       onInterrupted: () => clear(),
+      onServerError: (msg) => {
+        setServerError(msg);
+        pushLog("error", msg);
+      },
     },
   );
 
@@ -81,6 +102,21 @@ const SessionShell: React.FC = () => {
   React.useEffect(() => {
     setLiveEnabled(mode === "live");
   }, [mode]);
+
+  // Log WS state transitions and ready state
+  React.useEffect(() => {
+    pushLog("info", `wsState: ${wsState}`);
+  }, [wsState]);
+  React.useEffect(() => {
+    pushLog("info", `sessionReady: ${sessionReady}`);
+  }, [sessionReady]);
+  // Log WS state transitions and ready state
+  React.useEffect(() => {
+    pushLog("info", `wsState: ${wsState}`);
+  }, [wsState, pushLog]);
+  React.useEffect(() => {
+    pushLog("info", `sessionReady: ${sessionReady}`);
+  }, [sessionReady, pushLog]);
 
   const handleExport = () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
@@ -158,9 +194,15 @@ const SessionShell: React.FC = () => {
         <span style={{ marginLeft: 8 }} className="pill">
           Mode override: {modeOverride ?? "auto"}
         </span>
+        {serverError && (
+          <span style={{ marginLeft: 8 }} className="pill pill-warn">
+            Server error: {serverError}
+          </span>
+        )}
       </div>
       <CanvasView />
       <FloatingInput onSubmit={(val) => runCode(val)} />
+      <DevTerminal logs={logs} onClear={() => setLogs([])} />
     </div>
   );
 };
