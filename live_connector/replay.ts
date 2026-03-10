@@ -13,7 +13,7 @@ import fs from "fs";
 import path from "path";
 import { spawnSync } from "child_process";
 import dotenv from "dotenv";
-import { buildLiveConfig, createLiveSession } from "./connector";
+import { createLiveSession } from "./connector";
 
 const root = path.resolve(__dirname, "..");
 dotenv.config({ path: path.join(root, ".env.local") });

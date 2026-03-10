@@ -1,13 +1,18 @@
 /**
  * Live connector using @google/genai (Developer API key, no Vertex project required).
- * Normalized to documented live.connect usage.
+ * Aligned to documented SDK types: LiveServerMessage, LiveSendRealtimeInputParameters, etc.
+ *
+ * Reference: https://ai.google.dev/gemini-api/docs/live-tools
  */
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
+import type { LiveServerMessage, FunctionCall } from "@google/genai";
 
 type Patch = Record<string, unknown>;
 
 export type LiveSession = {
   sendAudio: (chunk: ArrayBuffer) => void;
+  sendText: (text: string) => void;
+  sendImage: (base64Png: string) => void;
   close: () => Promise<void>;
 };
 
@@ -16,11 +21,14 @@ export type LiveCallbacks = {
   onToolCall: (toolName: string, args: unknown) => void;
   onClose: (reason?: string) => void;
   onOpen?: () => void;
+  onSetupComplete?: () => void;
   onInterrupted?: () => void;
   onServerError?: (message: string) => void;
+  onTranscript?: (source: "user" | "model", text: string) => void;
 };
 
-// Defaults align with the working standalone agent (the standalone demo that works)
+// The native-audio model supports audio I/O + function calling.
+// gemini-live-2.5-flash-preview is text-only/audio output — NOT suitable for voice + tools.
 const DEFAULT_MODEL = "gemini-2.5-flash-native-audio-preview-12-2025";
 
 function buildTools() {
@@ -31,9 +39,12 @@ function buildTools() {
           name: "emit_canvas_patches",
           description: "Apply one or more canvas patches; never generate UI code.",
           parameters: {
-            type: "object",
+            type: Type.OBJECT,
             properties: {
-              patches: { type: "array", items: { type: "object" } },
+              patches: {
+                type: Type.ARRAY,
+                items: { type: Type.OBJECT },
+              },
             },
             required: ["patches"],
           },
@@ -42,11 +53,11 @@ function buildTools() {
           name: "request_snapshot_burst",
           description: "Ask client for low-FPS screen snapshots when you need visual confirmation.",
           parameters: {
-            type: "object",
+            type: Type.OBJECT,
             properties: {
-              reason: { type: "string" },
-              duration_s: { type: "integer", default: 8 },
-              fps: { type: "number", default: 1.0 },
+              reason: { type: Type.STRING },
+              duration_s: { type: Type.INTEGER },
+              fps: { type: Type.NUMBER },
             },
             required: ["reason"],
           },
@@ -56,52 +67,13 @@ function buildTools() {
   ];
 }
 
-function decodeAudioParts(msg: any): ArrayBuffer[] {
-  const buffers: ArrayBuffer[] = [];
-  const modelTurn = msg?.serverContent?.modelTurn;
-  const pushData = (data: any) => {
-    if (!data) return;
-    if (data instanceof Uint8Array) {
-      buffers.push(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer);
-    } else if (typeof data === "string") {
-      buffers.push(base64ToArrayBuffer(data));
-    }
-  };
-  // outputAudio array
-  (modelTurn?.outputAudio ?? []).forEach((a: any) => pushData(a?.data ?? a?.inlineData?.data));
-  // parts inline data
-  (modelTurn?.parts ?? []).forEach((p: any) => pushData(p?.inlineData?.data ?? p?.audio?.data));
-  return buffers;
-}
-
-function decodeToolCalls(msg: any): Array<{ id?: string; name: string; args: unknown }> {
-  const calls: Array<{ id?: string; name: string; args: unknown }> = [];
-  const modelTurn = msg?.serverContent?.modelTurn;
-  const tc = modelTurn?.toolCalls ?? modelTurn?.toolCall ?? [];
-  (Array.isArray(tc) ? tc : [tc]).forEach((call: any) => {
-    if (!call) return;
-    const name = call.name ?? call.functionCall?.name;
-    const args = call.args ?? call.arguments ?? call.functionCall?.args;
-    const id = call.id ?? call.functionCall?.id;
-    if (name) calls.push({ id, name, args });
-  });
-  (modelTurn?.parts ?? []).forEach((p: any) => {
-    const fc = p?.functionCall;
-    if (fc?.name) calls.push({ id: fc.id, name: fc.name, args: fc.args });
-  });
-  return calls;
-}
-
-function decodeServerError(msg: any): string | undefined {
-  return msg?.serverContent?.error?.message || msg?.error?.message || msg?.error;
-}
-
 export async function createLiveSession(apiKey: string, callbacks: LiveCallbacks): Promise<LiveSession> {
   if (!apiKey) throw new Error("GEMINI_API_KEY missing");
 
   const model = (import.meta.env.VITE_GEMINI_LIVE_MODEL as string | undefined) || DEFAULT_MODEL;
-  // Live WebSocket currently served on v1alpha; allow override
   const apiVersion = (import.meta.env.VITE_GEMINI_API_VERSION as string | undefined) || "v1alpha";
+
+  console.log(`[connector] connecting to model=${model} apiVersion=${apiVersion}`);
 
   const genAI = new GoogleGenAI({ apiKey, apiVersion });
   if (!genAI.live || typeof genAI.live.connect !== "function") {
@@ -109,12 +81,11 @@ export async function createLiveSession(apiKey: string, callbacks: LiveCallbacks
   }
 
   // Load the frozen system prompt from prompt/v1.0.txt at build time.
-  // Vite import.meta.glob can’t be used here, so we embed via dynamic import of raw text.
   let systemInstruction: string | undefined;
   try {
     systemInstruction = (await import("../prompt/v1.0.txt?raw")).default as string;
   } catch (e) {
-    console.warn("System prompt not found; proceeding without it", e);
+    console.warn("[connector] System prompt not found; proceeding without it", e);
   }
 
   let isOpen = false;
@@ -123,63 +94,127 @@ export async function createLiveSession(apiKey: string, callbacks: LiveCallbacks
     model,
     config: {
       responseModalities: [Modality.AUDIO],
+      speechConfig: {
+        voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } },
+      },
       tools: buildTools() as any,
-      functionCallingConfig: "AUTO",
+      // Enable real-time transcription of both user input and model output
+      inputAudioTranscription: {},
+      outputAudioTranscription: {},
       ...(systemInstruction ? { systemInstruction } : {}),
     },
     callbacks: {
       onopen: () => {
         isOpen = true;
+        console.log("[connector] WebSocket opened");
         callbacks.onOpen?.();
       },
-      onmessage: (msg: any) => {
+      onmessage: (msg: LiveServerMessage) => {
         try {
-          if (msg?.serverContent?.interrupted) {
-            callbacks.onInterrupted?.();
+          // ── 1. setupComplete ──
+          if (msg.setupComplete) {
+            console.log("[connector] ✓ setupComplete", msg.setupComplete);
+            callbacks.onSetupComplete?.();
+            return; // setupComplete is the only thing in this message
           }
-          const serverErr = decodeServerError(msg);
-          if (serverErr) {
-            console.error("Live server error:", serverErr);
-            callbacks.onServerError?.(serverErr);
-          }
-          decodeAudioParts(msg).forEach((buf) => callbacks.onAudio(buf));
-          const toolCalls = decodeToolCalls(msg);
-          toolCalls.forEach((c) => callbacks.onToolCall(c.name, c.args));
-          // Send tool responses in the documented shape (result payload).
-          if (toolCalls.length > 0) {
-            const responses = toolCalls
-              .filter((c) => c.id)
-              .map((c) => ({
-                id: c.id,
-                name: c.name,
-                response: { result: {} },
+
+          // ── 2. Tool call (check FIRST — a message has toolCall OR serverContent, never both) ──
+          if (msg.toolCall) {
+            const fcs = msg.toolCall.functionCalls ?? [];
+            console.log(`[connector] 🔧 tool call: ${fcs.map((fc: FunctionCall) => fc.name).join(", ")}`);
+
+            // Dispatch each tool call to the app
+            for (const fc of fcs) {
+              console.log(`[connector]   → ${fc.name}(${JSON.stringify(fc.args)}) id=${fc.id}`);
+              callbacks.onToolCall(fc.name!, fc.args);
+            }
+
+            // Send tool responses back immediately
+            const responses = fcs
+              .filter((fc: FunctionCall) => fc.id)
+              .map((fc: FunctionCall) => ({
+                id: fc.id!,
+                name: fc.name!,
+                response: { result: "ok" },
               }));
+
             if (responses.length > 0) {
               try {
-                session.sendToolResponse({ toolResponse: { functionResponses: responses } });
+                console.log("[connector] 📤 sending tool responses:", responses.map(r => r.name));
+                session.sendToolResponse({ functionResponses: responses });
               } catch (err) {
-                console.warn("sendToolResponse failed", err);
+                console.error("[connector] sendToolResponse failed:", err);
                 callbacks.onServerError?.(`toolResponse failed: ${String(err)}`);
               }
             }
+            return; // tool call message handled
           }
+
+          // ── 3. Tool call cancellation ──
+          if (msg.toolCallCancellation) {
+            console.log("[connector] ⚠️ tool call cancelled:", msg.toolCallCancellation.ids);
+            return;
+          }
+
+          // ── 4. Server content (audio, text, transcriptions) ──
+          if (msg.serverContent) {
+            // Interruption
+            if ((msg.serverContent as any).interrupted) {
+              console.log("[connector] 🛑 interrupted");
+              callbacks.onInterrupted?.();
+            }
+
+            // Input transcription (what the user said)
+            const inputTranscript = (msg.serverContent as any).inputTranscription;
+            if (inputTranscript?.text) {
+              console.log(`[connector] 🎤 user: "${inputTranscript.text}"`);
+              callbacks.onTranscript?.("user", inputTranscript.text);
+            }
+
+            // Output transcription (what the model said)
+            const outputTranscript = (msg.serverContent as any).outputTranscription;
+            if (outputTranscript?.text) {
+              console.log(`[connector] 🤖 model: "${outputTranscript.text}"`);
+              callbacks.onTranscript?.("model", outputTranscript.text);
+            }
+
+            // Turn complete
+            if (msg.serverContent.turnComplete) {
+              console.log("[connector] ✅ turn complete");
+            }
+          }
+
+          // ── 5. Audio data — extract directly from parts, NOT msg.data getter ──
+          // The msg.data getter triggers SDK warnings when response has
+          // text/thought parts alongside audio, which may contribute to instability.
+          const parts = (msg as any)?.serverContent?.modelTurn?.parts;
+          if (Array.isArray(parts)) {
+            for (const p of parts) {
+              const inlineData = p?.inlineData;
+              if (inlineData?.data && inlineData?.mimeType?.startsWith("audio/")) {
+                callbacks.onAudio(base64ToArrayBuffer(inlineData.data));
+              }
+            }
+          }
+
         } catch (e) {
-          console.error("onmessage decode error", e);
+          console.error("[connector] onmessage decode error:", e);
         }
       },
       onerror: (err: any) => {
         isOpen = false;
-        const msg = err?.message ?? "live session error";
-        callbacks.onServerError?.(msg);
-        callbacks.onClose(msg);
+        const errMsg = err?.message ?? "live session error";
+        console.error("[connector] onerror:", errMsg);
+        callbacks.onServerError?.(errMsg);
+        callbacks.onClose(errMsg);
       },
       onclose: (evt: any) => {
         isOpen = false;
         const reason = evt?.reason || "closed";
         const code = typeof evt?.code === "number" ? evt.code : undefined;
-        const msg = code ? `close code ${code}: ${reason}` : reason;
-        callbacks.onServerError?.(msg);
-        callbacks.onClose(msg);
+        const closeMsg = code ? `close code ${code}: ${reason}` : reason;
+        console.log("[connector] onclose:", closeMsg);
+        callbacks.onClose(closeMsg);
       },
     },
   });
@@ -189,22 +224,48 @@ export async function createLiveSession(apiKey: string, callbacks: LiveCallbacks
       if (!session || !isOpen) return;
       const b64 = arrayBufferToBase64(chunk);
       session.sendRealtimeInput({
-        realtimeInput: {
-          mediaChunks: [
-            {
-              mimeType: "audio/pcm;rate=16000",
-              data: b64,
-            },
-          ],
+        audio: {
+          data: b64,
+          mimeType: "audio/pcm;rate=16000",
         },
       });
     } catch (e) {
-      console.error("sendRealtimeInput error", e);
+      console.error("[connector] sendRealtimeInput error:", e);
+    }
+  };
+
+  const sendText = (text: string) => {
+    try {
+      if (!session || !isOpen) return;
+      console.log(`[connector] 📝 sending text: "${text}"`);
+      session.sendClientContent({
+        turns: [{ role: "user", parts: [{ text }] }],
+        turnComplete: true,
+      });
+    } catch (e) {
+      console.error("[connector] sendClientContent error:", e);
+    }
+  };
+
+  const sendImage = (base64Png: string) => {
+    try {
+      if (!session || !isOpen) return;
+      console.log("[connector] 📷 sending image");
+      session.sendRealtimeInput({
+        video: {
+          data: base64Png,
+          mimeType: "image/png",
+        },
+      });
+    } catch (e) {
+      console.error("[connector] sendImage error:", e);
     }
   };
 
   return {
     sendAudio,
+    sendText,
+    sendImage,
     close: async () => {
       try {
         await session.close();

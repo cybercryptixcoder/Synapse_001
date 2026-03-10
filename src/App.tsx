@@ -24,22 +24,23 @@ const SessionShell: React.FC = () => {
   );
 
   const { runCode } = useWorkerRunner((result) => {
+    const entries = [
+      ...(result.stdout || []).map((text) => ({ kind: "stdout" as const, text })),
+      ...(result.stderr || []).map((text) => ({ kind: "stderr" as const, text })),
+    ];
+    if (result.error) {
+      entries.push({ kind: "stderr" as const, text: result.error });
+    }
     const patches: Patch[] = [
       {
         op: "add",
         component: {
           kind: "outputTerminal",
           id: "output-terminal-1",
-          entries: [
-            ...(result.stdout || []).map((text) => ({ kind: "stdout", text })),
-            ...(result.stderr || []).map((text) => ({ kind: "stderr", text })),
-          ],
+          entries,
         },
       },
     ];
-    if (result.error) {
-      patches[0].component.entries.push({ kind: "stderr", text: result.error });
-    }
     dispatchPatches(patches);
   });
 
@@ -59,7 +60,7 @@ const SessionShell: React.FC = () => {
 
   const { enqueue, clear } = useAudioPlayback(liveEnabled, setStatus);
 
-  const { mode, status: liveStatus, sendAudio, setMode, sessionReady, wsState, retry } = useLiveSession(
+  const { mode, status: liveStatus, sendAudio, sendText, sendImage, setMode, sessionReady, wsState, retry } = useLiveSession(
     chosenMode,
     {
       onPatches: (patches) => {
@@ -79,6 +80,16 @@ const SessionShell: React.FC = () => {
           onCapture: (blob) => {
             setStatus(`snapshot captured (${(blob.size / 1024).toFixed(1)} KB)`);
             pushLog("info", `snapshot captured ${blob.size} bytes`);
+            // Send the snapshot to the model if live
+            if (sendImage) {
+              const reader = new FileReader();
+              reader.onloadend = () => {
+                const dataUrl = reader.result as string;
+                const b64 = dataUrl.split(",")[1];
+                if (b64) sendImage(b64);
+              };
+              reader.readAsDataURL(blob);
+            }
           },
         });
       },
@@ -103,13 +114,6 @@ const SessionShell: React.FC = () => {
     setLiveEnabled(mode === "live");
   }, [mode]);
 
-  // Log WS state transitions and ready state
-  React.useEffect(() => {
-    pushLog("info", `wsState: ${wsState}`);
-  }, [wsState]);
-  React.useEffect(() => {
-    pushLog("info", `sessionReady: ${sessionReady}`);
-  }, [sessionReady]);
   // Log WS state transitions and ready state
   React.useEffect(() => {
     pushLog("info", `wsState: ${wsState}`);
@@ -201,7 +205,11 @@ const SessionShell: React.FC = () => {
         )}
       </div>
       <CanvasView />
-      <FloatingInput onSubmit={(val) => runCode(val)} />
+      <FloatingInput onSubmit={(val) => {
+        // In live mode, send text to AI; always run code too
+        if (sendText && sessionReady) sendText(val);
+        runCode(val);
+      }} />
       <DevTerminal logs={logs} onClear={() => setLogs([])} />
     </div>
   );
