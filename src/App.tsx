@@ -46,9 +46,12 @@ const SessionShell: React.FC = () => {
 
   const envForceMock = import.meta.env.VITE_FORCE_MOCK === "true";
   const initialMode: "mock" | "live" = useMemo(() => {
+    const apiMode = ((import.meta.env.VITE_API_MODE as string | undefined) || "vertex").toLowerCase();
     const hasKey = Boolean(import.meta.env.VITE_GEMINI_API_KEY);
     if (envForceMock) return "mock";
-    return hasKey ? "live" : "mock";
+    if (apiMode === "mock") return "mock";
+    if (apiMode === "api") return hasKey ? "live" : "mock";
+    return "live";
   }, [envForceMock]);
 
   const { startBurst } = useSnapshotBurst();
@@ -98,6 +101,9 @@ const SessionShell: React.FC = () => {
       onServerError: (msg) => {
         setServerError(msg);
         pushLog("error", msg);
+      },
+      onDebugLog: (level, message) => {
+        pushLog(level, message);
       },
     },
   );

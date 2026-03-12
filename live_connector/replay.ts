@@ -16,9 +16,10 @@ import dotenv from "dotenv";
 import { createLiveSession } from "./connector";
 
 const root = path.resolve(__dirname, "..");
-dotenv.config({ path: path.join(root, ".env.local") });
+dotenv.config({ path: path.join(root, ".env") });
+dotenv.config({ path: path.join(root, ".env.local"), override: true });
 
-const apiKey = process.env.GEMINI_API_KEY || "";
+const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || "";
 const liveMode = process.env.LIVE_REPLAY === "1";
 
 async function runMock() {
