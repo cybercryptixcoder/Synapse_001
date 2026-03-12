@@ -3,4 +3,6 @@
 prompt/harness/artifacts/*.jsonl
 node_modules
 dist
-
+# GCP service account keys — NEVER commit these
+synapse-489819-990950fad31f.json
+service-account*.json

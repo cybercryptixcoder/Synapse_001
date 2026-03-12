@@ -11,19 +11,26 @@
   },
   "dependencies": {
     "@google/genai": "^1.44.0",
+    "clsx": "^2.1.1",
     "dotenv": "^16.4.5",
     "html2canvas": "^1.4.1",
-    "clsx": "^2.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/html2canvas": "^1.0.0",
     "@types/react": "^18.2.73",
     "@types/react-dom": "^18.2.18",
-    "@types/html2canvas": "^1.0.0",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^9.2.1",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "google-auth-library": "^10.6.1",
     "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.4.5",
-    "vite": "^5.2.11",
-    "@vitejs/plugin-react": "^4.2.1"
+    "vite": "^5.2.11"
   }
 }
