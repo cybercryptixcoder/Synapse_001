@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { CanvasProvider, useCanvas } from "./canvas/CanvasProvider";
 import { CanvasView } from "./components/CanvasView";
 import { FloatingInput } from "./components/FloatingInput";
@@ -15,6 +15,11 @@ const SessionShell: React.FC = () => {
   const [status, setStatus] = useState<string>("connecting");
   const [serverError, setServerError] = useState<string | null>(null);
   const [logs, setLogs] = useState<DevLog[]>([]);
+  const lastPatchAtRef = useRef<number>(0);
+  const lastCodeViewerPatchAtRef = useRef<number>(0);
+  const transcriptBufferRef = useRef<string>("");
+  const pendingFenceRef = useRef<{ language: string; code: string; createdAt: number } | null>(null);
+  const fenceTimerRef = useRef<number | null>(null);
 
   const pushLog = useCallback(
     (level: DevLog["level"], message: string) => {
@@ -22,6 +27,45 @@ const SessionShell: React.FC = () => {
     },
     [],
   );
+
+  const scheduleFenceInjection = useCallback(() => {
+    if (fenceTimerRef.current !== null) return;
+    fenceTimerRef.current = window.setTimeout(() => {
+      fenceTimerRef.current = null;
+      const pending = pendingFenceRef.current;
+      if (!pending) return;
+      if (lastCodeViewerPatchAtRef.current >= pending.createdAt) {
+        pendingFenceRef.current = null;
+        return;
+      }
+      const id = `auto-code-${pending.createdAt}`;
+      const patches: Patch[] = [
+        {
+          op: "add",
+          component: {
+            kind: "codeViewer",
+            id,
+            language: pending.language || "text",
+            code: pending.code,
+          },
+        },
+      ];
+      dispatchPatches(patches);
+      lastPatchAtRef.current = Date.now();
+      lastCodeViewerPatchAtRef.current = Date.now();
+      pushLog("warn", "⚠️ inferred code from transcript; tool call missing");
+      pendingFenceRef.current = null;
+    }, 800) as unknown as number;
+  }, [dispatchPatches, pushLog]);
+
+  useEffect(() => {
+    return () => {
+      if (fenceTimerRef.current !== null) {
+        window.clearTimeout(fenceTimerRef.current);
+        fenceTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const { runCode } = useWorkerRunner((result) => {
     const entries = [
@@ -68,6 +112,11 @@ const SessionShell: React.FC = () => {
     {
       onPatches: (patches) => {
         pushLog("info", `patches received: ${patches.length}`);
+        lastPatchAtRef.current = Date.now();
+        if (patches.some((p) => p.op === "add" && (p.component as any)?.kind === "codeViewer")) {
+          lastCodeViewerPatchAtRef.current = Date.now();
+          pendingFenceRef.current = null;
+        }
         dispatchPatches(patches);
       },
       onStatus: (s) => {
@@ -104,6 +153,21 @@ const SessionShell: React.FC = () => {
       },
       onDebugLog: (level, message) => {
         pushLog(level, message);
+      },
+      onTranscript: (source, text) => {
+        if (source !== "model") return;
+        transcriptBufferRef.current += text;
+        const fenceRegex = /```([a-zA-Z0-9+#_-]*)\s*([\s\S]*?)```/;
+        const match = fenceRegex.exec(transcriptBufferRef.current);
+        if (match) {
+          const language = match[1] || "text";
+          const code = match[2].trim();
+          transcriptBufferRef.current = transcriptBufferRef.current.replace(match[0], "");
+          if (code) {
+            pendingFenceRef.current = { language, code, createdAt: Date.now() };
+            scheduleFenceInjection();
+          }
+        }
       },
     },
   );

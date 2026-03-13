@@ -52,6 +52,87 @@ function inferKind(component: Record<string, unknown>): string | null {
   return null;
 }
 
+function coerceCode(raw: any) {
+  if (Array.isArray(raw)) {
+    return raw.map((line) => String(line)).join("\n");
+  }
+  if (raw && typeof raw === "object") {
+    const fallback = (raw as any).code ?? (raw as any).text ?? (raw as any).content ?? (raw as any).value;
+    return typeof fallback === "string" || Array.isArray(fallback) ? coerceCode(fallback) : String(raw);
+  }
+  const str = raw === undefined || raw === null ? "" : String(raw);
+  if (str.includes("\\n") && !str.includes("\n")) {
+    return str.replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\r/g, "\r");
+  }
+  return str;
+}
+
+function normalizeHighlights(raw: any) {
+  if (!raw) return undefined;
+  if (Array.isArray(raw)) {
+    if (raw.length === 0) return [];
+    if (raw.every((v) => typeof v === "number" || typeof v === "string")) {
+      return raw.map((v) => {
+        const n = Number(v);
+        return { startLine: n, endLine: n };
+      });
+    }
+    if (raw.every((v) => Array.isArray(v) && v.length >= 2)) {
+      return raw.map((v) => ({ startLine: Number(v[0]), endLine: Number(v[1]) }));
+    }
+    return raw
+      .map((v) => {
+        if (!v || typeof v !== "object") return null;
+        const startLine = (v as any).startLine ?? (v as any).start ?? (v as any).from ?? (v as any).line;
+        const endLine = (v as any).endLine ?? (v as any).end ?? (v as any).to ?? startLine;
+        if (startLine === undefined) return null;
+        return { startLine: Number(startLine), endLine: Number(endLine) };
+      })
+      .filter(Boolean) as { startLine: number; endLine: number }[];
+  }
+  if (typeof raw === "string") {
+    const parts = raw.split(/[, ]+/).filter(Boolean);
+    const ranges = parts.map((p) => {
+      const [a, b] = p.split("-").map((n) => Number(n));
+      if (!Number.isFinite(a)) return null;
+      return { startLine: a, endLine: Number.isFinite(b) ? b : a };
+    });
+    return ranges.filter(Boolean) as { startLine: number; endLine: number }[];
+  }
+  if (typeof raw === "object") {
+    const startLine = (raw as any).startLine ?? (raw as any).start ?? (raw as any).from ?? (raw as any).line;
+    const endLine = (raw as any).endLine ?? (raw as any).end ?? (raw as any).to ?? startLine;
+    if (startLine !== undefined) {
+      return [{ startLine: Number(startLine), endLine: Number(endLine) }];
+    }
+  }
+  return undefined;
+}
+
+function normalizeCodeViewerComponent(comp: any, log: (level: "info" | "warn" | "error", message: string) => void) {
+  if (comp.code === undefined && comp.text !== undefined) {
+    comp.code = comp.text;
+    delete comp.text;
+  }
+  comp.code = coerceCode(comp.code);
+  if (!comp.language) comp.language = "text";
+  const altHighlights =
+    comp.highlights ??
+    comp.highlightLines ??
+    comp.highlightedLines ??
+    comp.highlightRanges ??
+    comp.highlight ??
+    comp.lines;
+  const normalized = normalizeHighlights(altHighlights);
+  if (normalized) comp.highlights = normalized;
+  if (comp.highlightLines || comp.highlightedLines || comp.highlightRanges || comp.lines) {
+    delete comp.highlightLines;
+    delete comp.highlightedLines;
+    delete comp.highlightRanges;
+    delete comp.lines;
+  }
+}
+
 function coerceStepText(raw: any): string | null {
   if (typeof raw === "string" || typeof raw === "number") return String(raw);
   if (!raw || typeof raw !== "object") return null;
@@ -203,6 +284,9 @@ function normalizePatches(
         continue;
       }
       comp.kind = kind;
+      if (kind === "codeViewer") {
+        normalizeCodeViewerComponent(comp, log);
+      }
       if (kind === "stepList") {
         normalizeStepListComponent(comp, log);
       }
@@ -223,6 +307,17 @@ function normalizePatches(
       if (op === "update") {
         const path = (p as any).path;
         if (typeof path === "string") {
+          if (path === "/code") {
+            (p as any).value = coerceCode((p as any).value);
+          }
+          if (path === "/language" && typeof (p as any).value !== "string") {
+            (p as any).value = String((p as any).value ?? "text");
+          }
+          if (path === "/highlights" || path === "/highlightLines" || path === "/highlightedLines" || path === "/highlightRanges") {
+            const normalized = normalizeHighlights((p as any).value);
+            if (normalized) (p as any).value = normalized;
+            if (path !== "/highlights") (p as any).path = "/highlights";
+          }
           if (path === "/steps" && Array.isArray((p as any).value)) {
             (p as any).value = normalizeStepsArray((p as any).value, id, log);
           } else {

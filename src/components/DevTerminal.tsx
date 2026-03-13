@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 
 type LogLevel = "info" | "warn" | "error";
 
@@ -14,6 +14,8 @@ type Props = {
 };
 
 export const DevTerminal: React.FC<Props> = ({ logs, onClear }) => {
+  const [collapsed, setCollapsed] = useState(false);
+
   const copyAll = async () => {
     const text = logs
       .map((l) => `${new Date(l.ts).toISOString()} [${l.level}] ${l.message}`)
@@ -24,6 +26,46 @@ export const DevTerminal: React.FC<Props> = ({ logs, onClear }) => {
       console.error("Clipboard copy failed", e);
     }
   };
+
+  if (collapsed) {
+    return (
+      <div
+        style={{
+          position: "fixed",
+          bottom: 16,
+          left: 16,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          background: "#0f172a",
+          color: "#e2e8f0",
+          borderRadius: 8,
+          padding: "8px 10px",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+          fontFamily:
+            "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace",
+          fontSize: 12,
+          zIndex: 999,
+        }}
+      >
+        <div style={{ fontWeight: 700 }}>Dev Terminal</div>
+        <div style={{ opacity: 0.7 }}>({logs.length} logs)</div>
+        <button
+          onClick={() => setCollapsed(false)}
+          style={{
+            border: "1px solid #334155",
+            background: "#1e293b",
+            color: "#e2e8f0",
+            padding: "4px 8px",
+            borderRadius: 6,
+            cursor: "pointer",
+          }}
+        >
+          Expand
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -47,6 +89,19 @@ export const DevTerminal: React.FC<Props> = ({ logs, onClear }) => {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
         <div style={{ fontWeight: 700 }}>Dev Terminal (live logs)</div>
         <div style={{ display: "flex", gap: 6 }}>
+          <button
+            onClick={() => setCollapsed(true)}
+            style={{
+              border: "1px solid #334155",
+              background: "#1e293b",
+              color: "#e2e8f0",
+              padding: "4px 8px",
+              borderRadius: 6,
+              cursor: "pointer",
+            }}
+          >
+            Collapse
+          </button>
           <button
             onClick={copyAll}
             style={{

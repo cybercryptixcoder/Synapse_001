@@ -29,7 +29,26 @@ export function applyPatches(state: CanvasState, patches: Patch[]): CanvasState 
       if (!comp) continue;
       const clone = structuredClone(comp);
       try {
+        let handled = false;
+        const childrenMatch = path.match(/^\/steps\/(\d+)\/children$/);
+        if (childrenMatch && Array.isArray(value) && value.length === 1) {
+          const stepIdx = Number(childrenMatch[1]);
+          const step = (clone as any)?.steps?.[stepIdx];
+          const incoming = value[0];
+          if (step && Array.isArray(step.children)) {
+            const incomingId = (incoming as any)?.id;
+            const exists = incomingId
+              ? step.children.some((child: any) => child?.id === incomingId)
+              : false;
+            if (!exists) {
+              step.children = [...step.children, incoming];
+              handled = true;
+            }
+          }
+        }
+        if (!handled) {
         setByPointer(clone as any, path, value);
+        }
         next.components[id] = clone;
       } catch (e) {
         console.warn("Failed to apply patch path", path, e);

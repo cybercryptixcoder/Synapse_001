@@ -1,5 +1,6 @@
 import React from "react";
 import { TextNoteComponent } from "../canvas/types";
+import { renderMarkdown } from "../utils/markdown";
 
 export const TextNote: React.FC<{ component: TextNoteComponent }> = ({ component }) => {
   return (
@@ -8,7 +9,7 @@ export const TextNote: React.FC<{ component: TextNoteComponent }> = ({ component
         <span className="badge">Note</span>
         <strong>Summary</strong>
       </div>
-      <div style={{ whiteSpace: "pre-wrap" }}>{component.text}</div>
+      <div className="markdown" dangerouslySetInnerHTML={{ __html: renderMarkdown(component.text || "") }} />
     </div>
   );
 };
