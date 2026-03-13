@@ -52,6 +52,64 @@ function inferKind(component: Record<string, unknown>): string | null {
   return null;
 }
 
+function coerceStepText(raw: any): string | null {
+  if (typeof raw === "string" || typeof raw === "number") return String(raw);
+  if (!raw || typeof raw !== "object") return null;
+  const candidates = [
+    (raw as any).text,
+    (raw as any).title,
+    (raw as any).label,
+    (raw as any).name,
+    (raw as any).content,
+    (raw as any).description,
+    (raw as any).detail,
+    (raw as any).value,
+    (raw as any).step,
+  ];
+  for (const c of candidates) {
+    if (typeof c === "string" || typeof c === "number") return String(c);
+  }
+  return null;
+}
+
+function normalizeStepValue(raw: any, fallbackId: string, log: (level: "info" | "warn" | "error", message: string) => void): any {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const text = coerceStepText(raw);
+    if (!text) log("warn", `⚠️ step missing text for ${fallbackId}`);
+    const childrenRaw =
+      (raw as any).children ??
+      (raw as any).substeps ??
+      (raw as any).items ??
+      (raw as any).steps;
+    const children = Array.isArray(childrenRaw)
+      ? normalizeStepsArray(childrenRaw, `${(raw as any).id ?? fallbackId}-child`, log)
+      : undefined;
+    return {
+      id: (raw as any).id ?? fallbackId,
+      text: text ?? "",
+      highlight: Boolean((raw as any).highlight),
+      expanded: (raw as any).expanded,
+      ...(children ? { children } : {}),
+    };
+  }
+  const text = coerceStepText(raw);
+  return { id: fallbackId, text: text ?? "" };
+}
+
+function normalizeStepsArray(raw: any, baseId: string, log: (level: "info" | "warn" | "error", message: string) => void) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((step, idx) => normalizeStepValue(step, `${baseId}-step-${idx + 1}`, log));
+}
+
+function normalizeStepListComponent(comp: any, log: (level: "info" | "warn" | "error", message: string) => void) {
+  const stepsRaw = Array.isArray(comp.steps)
+    ? comp.steps
+    : Array.isArray(comp.items)
+      ? comp.items
+      : [];
+  comp.steps = normalizeStepsArray(stepsRaw, comp.id || "step", log);
+}
+
 function parseJsonMaybe(value: unknown) {
   if (typeof value !== "string") return value;
   try {
@@ -59,6 +117,44 @@ function parseJsonMaybe(value: unknown) {
   } catch {
     return value;
   }
+}
+
+function formatValueForLog(value: unknown) {
+  try {
+    if (typeof value === "string") {
+      const trimmed = value.length > 120 ? `${value.slice(0, 117)}...` : value;
+      return `"${trimmed}"`;
+    }
+    const json = JSON.stringify(value);
+    if (!json) return String(value);
+    return json.length > 200 ? `${json.slice(0, 197)}...` : json;
+  } catch {
+    return String(value);
+  }
+}
+
+function summarizePatch(p: Patch) {
+  if (p.op === "add") {
+    const comp = p.component as any;
+    if (comp?.kind === "stepList") {
+      return `add:stepList#${comp.id} steps=${Array.isArray(comp.steps) ? comp.steps.length : 0}`;
+    }
+    if (comp?.kind === "codeViewer") {
+      const lines = typeof comp.code === "string" ? comp.code.split("\n").length : 0;
+      return `add:codeViewer#${comp.id} ${comp.language || "code"} lines=${lines}`;
+    }
+    if (comp?.kind === "outputTerminal") {
+      return `add:outputTerminal#${comp.id} entries=${Array.isArray(comp.entries) ? comp.entries.length : 0}`;
+    }
+    if (comp?.kind === "textNote") {
+      return `add:textNote#${comp.id}`;
+    }
+    return `add:${comp?.kind ?? "component"}#${comp?.id ?? "unknown"}`;
+  }
+  if (p.op === "update") {
+    return `update:${(p as any).id} ${(p as any).path}=${formatValueForLog((p as any).value)}`;
+  }
+  return `remove:${(p as any).id}`;
 }
 
 function normalizePatches(
@@ -107,6 +203,9 @@ function normalizePatches(
         continue;
       }
       comp.kind = kind;
+      if (kind === "stepList") {
+        normalizeStepListComponent(comp, log);
+      }
       if (!SUPPORTED_KINDS.has(kind)) {
         log("warn", `⚠️ unsupported component kind: ${String(kind)}`);
       }
@@ -120,6 +219,35 @@ function normalizePatches(
       if (!id) {
         log("warn", `⚠️ ${op} patch missing id`);
         continue;
+      }
+      if (op === "update") {
+        const path = (p as any).path;
+        if (typeof path === "string") {
+          if (path === "/steps" && Array.isArray((p as any).value)) {
+            (p as any).value = normalizeStepsArray((p as any).value, id, log);
+          } else {
+            const match = path.match(/^\/steps\/(\d+)$/);
+            if (match) {
+              const idx = Number(match[1]);
+              (p as any).value = normalizeStepValue((p as any).value, `${id}-step-${idx + 1}`, log);
+            }
+            const childrenMatch = path.match(/^\/steps\/(\d+)\/children$/);
+            if (childrenMatch && Array.isArray((p as any).value)) {
+              const idx = Number(childrenMatch[1]);
+              (p as any).value = normalizeStepsArray((p as any).value, `${id}-step-${idx + 1}-child`, log);
+            }
+            const childIndexMatch = path.match(/^\/steps\/(\d+)\/children\/(\d+)$/);
+            if (childIndexMatch) {
+              const stepIdx = Number(childIndexMatch[1]);
+              const childIdx = Number(childIndexMatch[2]);
+              (p as any).value = normalizeStepValue(
+                (p as any).value,
+                `${id}-step-${stepIdx + 1}-child-${childIdx + 1}`,
+                log,
+              );
+            }
+          }
+        }
       }
       out.push(p as Patch);
     }
@@ -258,13 +386,7 @@ export function useLiveSession(
                 if (name === "emit_canvas_patches") {
                   const normalized = normalizePatches(args, debugLog);
                   if (normalized) {
-                    const summary = normalized
-                      .map((p) =>
-                        p.op === "add"
-                          ? `add:${(p.component as any).kind}#${(p.component as any).id}`
-                          : `${p.op}:${(p as any).id}`,
-                      )
-                      .join(", ");
+                    const summary = normalized.map((p) => summarizePatch(p)).join(", ");
                     debugLog("info", `🧩 patches (${normalized.length}): ${summary}`);
                     handlersRef.current.onPatches?.(normalized);
                   }
@@ -324,13 +446,7 @@ export function useLiveSession(
                 if (name === "emit_canvas_patches") {
                   const normalized = normalizePatches(args, debugLog);
                   if (normalized) {
-                    const summary = normalized
-                      .map((p) =>
-                        p.op === "add"
-                          ? `add:${(p.component as any).kind}#${(p.component as any).id}`
-                          : `${p.op}:${(p as any).id}`,
-                      )
-                      .join(", ");
+                    const summary = normalized.map((p) => summarizePatch(p)).join(", ");
                     debugLog("info", `🧩 patches (${normalized.length}): ${summary}`);
                     handlersRef.current.onPatches?.(normalized);
                   }

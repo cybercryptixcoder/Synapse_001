@@ -11,25 +11,50 @@ export function setByPointer(target: any, pointer: string, value: unknown) {
     .slice(1)
     .map((p) => (p === "" ? "" : p));
   let cursor: any = target;
+
+  const isIndex = (p: string) => Number.isInteger(Number(p));
+
   for (let i = 0; i < parts.length; i++) {
-    const key = parts[i];
+    const rawKey = parts[i];
+    const keyIsIndex = isIndex(rawKey);
+    const key = keyIsIndex ? Number(rawKey) : rawKey;
     const isLast = i === parts.length - 1;
-    const idx = Number.isInteger(Number(key)) ? Number(key) : key;
+
     if (isLast) {
-      if (typeof idx === "number") {
-        if (!Array.isArray(cursor)) cursor = [];
-        (cursor as any[])[idx] = value;
+      if (keyIsIndex && Array.isArray(cursor)) {
+        cursor[key] = value;
       } else {
-        cursor[idx] = value;
+        cursor[key as any] = value;
       }
-    } else {
-      const next = typeof idx === "number" ? [] : {};
-      if (typeof idx === "number") {
-        if (!Array.isArray(cursor[idx])) cursor[idx] = [];
-      } else if (cursor[idx] === undefined) {
-        cursor[idx] = next;
-      }
-      cursor = cursor[idx];
+      return;
     }
+
+    const nextRaw = parts[i + 1];
+    const nextShouldBeArray = isIndex(nextRaw);
+
+    if (keyIsIndex && Array.isArray(cursor)) {
+      if (
+        cursor[key] === undefined ||
+        cursor[key] === null ||
+        typeof cursor[key] !== "object" ||
+        (nextShouldBeArray && !Array.isArray(cursor[key])) ||
+        (!nextShouldBeArray && Array.isArray(cursor[key]))
+      ) {
+        cursor[key] = nextShouldBeArray ? [] : {};
+      }
+      cursor = cursor[key];
+      continue;
+    }
+
+    if (
+      cursor[key as any] === undefined ||
+      cursor[key as any] === null ||
+      typeof cursor[key as any] !== "object" ||
+      (nextShouldBeArray && !Array.isArray(cursor[key as any])) ||
+      (!nextShouldBeArray && Array.isArray(cursor[key as any]))
+    ) {
+      cursor[key as any] = nextShouldBeArray ? [] : {};
+    }
+    cursor = cursor[key as any];
   }
 }
