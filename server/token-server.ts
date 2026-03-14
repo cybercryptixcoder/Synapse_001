@@ -90,7 +90,7 @@ app.get("/api/token", async (_req, res) => {
 });
 
 function loadSystemPrompt(): string | undefined {
-  const promptPath = path.join(projectRoot, "prompt", "v1.0.txt");
+  const promptPath = path.join(projectRoot, "prompt", "v1.1.txt");
   try {
     const text = fs.readFileSync(promptPath, "utf8");
     console.log(`[token-server] 📄 system prompt loaded (${text.length} chars)`);

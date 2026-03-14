@@ -80,10 +80,10 @@ export async function createLiveSession(apiKey: string, callbacks: LiveCallbacks
     throw new Error("Live API not available in @google/genai version");
   }
 
-  // Load the frozen system prompt from prompt/v1.0.txt at build time.
+  // Load the frozen system prompt from prompt/v1.1.txt at build time.
   let systemInstruction: string | undefined;
   try {
-    systemInstruction = (await import("../prompt/v1.0.txt?raw")).default as string;
+    systemInstruction = (await import("../prompt/v1.1.txt?raw")).default as string;
   } catch (e) {
     console.warn("[connector] System prompt not found; proceeding without it", e);
   }

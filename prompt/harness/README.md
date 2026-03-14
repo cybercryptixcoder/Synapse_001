@@ -3,7 +3,7 @@
 Validates Synapse System Prompt v1.0 behavior using golden dialogues and session logs.
 
 ## Files
-- `../v1.0.txt` - system prompt.
+- `../v1.1.txt` - system prompt.
 - `golden_dialogues/` - expected event skeletons (5 cases).
 - `artifacts/sample_merge_sort_session.jsonl` - example log that should pass `merge_sort_walkthrough` checks.
 - `run_harness.py` - assertion runner.

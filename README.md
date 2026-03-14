@@ -34,7 +34,7 @@ npx tsx server/token-server.ts  # starts the Vertex Live proxy on http://localho
 - `live_connector/replay.ts` still supports MOCK (default) and LIVE (`LIVE_REPLAY=1`) modes for prompt harness replays.
 
 ### Prompt harness
-- Prompt text: `prompt/v1.0.txt`
+- Prompt text: `prompt/v1.1.txt`
 - Harness: `prompt/harness/run_harness.py`
 - CI helper: `prompt/harness/ci.sh`
 
