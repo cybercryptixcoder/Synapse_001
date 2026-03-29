@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 import { CanvasProvider, useCanvas } from './canvas/CanvasProvider';
 import { Canvas } from './canvas/Canvas';
 import { useLiveSession, type ToolCall } from './hooks/useLiveSession';
@@ -16,7 +16,7 @@ export default function App() {
 }
 
 function AppInner() {
-  const { addWidget, getInventoryString, widgets } = useCanvas();
+  const { addWidget } = useCanvas();
   const { playChunk, flush } = useAudioPlayback();
 
   const handleToolCall = useCallback(
@@ -32,18 +32,11 @@ function AppInner() {
     [addWidget]
   );
 
-  const { connect, disconnect, sendAudio, sendContext, status } = useLiveSession({
+  const { connect, disconnect, sendAudio, status } = useLiveSession({
     onAudioChunk: (base64) => playChunk(base64),
     onInterrupted: () => flush(),
     onToolCall: handleToolCall,
   });
-
-  // Inject updated canvas inventory into model context whenever widgets change
-  useEffect(() => {
-    if (status === 'connected') {
-      sendContext(getInventoryString());
-    }
-  }, [widgets, status, sendContext, getInventoryString]);
 
   const { start: startMic, stop: stopMic, isRecording } = useAudioIO(
     useCallback((chunk: string) => sendAudio(chunk), [sendAudio])
