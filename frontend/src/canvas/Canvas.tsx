@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { useCanvas } from './CanvasProvider';
 import { CodeViewer, type CodeViewerData } from '../widgets/CodeViewer';
 import { CallStack, type CallStackData } from '../widgets/CallStack';
+import { ImageWidget, type ImageWidgetData } from '../widgets/ImageWidget';
 import './Canvas.css';
 
 export function Canvas() {
@@ -48,6 +49,8 @@ function renderWidget(type: string, data: unknown) {
       return <CodeViewer data={data as CodeViewerData} />;
     case 'call_stack':
       return <CallStack data={data as CallStackData} />;
+    case 'image':
+      return <ImageWidget data={data as ImageWidgetData} />;
     default:
       return null;
   }

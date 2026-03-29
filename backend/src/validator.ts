@@ -31,6 +31,13 @@ const REGISTRY: Record<string, ToolSpec> = {
     },
   },
 
+  // Image
+  image_show: {
+    args: {
+      query: { type: 'string', required: true },
+    },
+  },
+
   // Call Stack — BOXED (disabled, component preserved)
 };
 

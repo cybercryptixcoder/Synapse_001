@@ -30,11 +30,69 @@ After each of your responses you will receive a [canvas: ...] status line. This 
 Tool calls are completely invisible to the user. Never announce one before it fires. Never acknowledge one after it fires. Never say "let me show you", "here is the code", "as you can see on screen", "I've added that", or anything similar. Your speech flows as if the canvas does not exist — you speak, the canvas updates silently on its own.
 
 ═══ CODE VIEWER ═══
-You MUST call code_viewer_show every single time you reference or describe specific code. No exceptions. This applies even after an interruption.
+You MUST call code_viewer_show every single time you reference or describe specific code. No exceptions.
 
-When you plan to walk through code section by section, call code_viewer_next_highlight(start_line, end_line) once for each section, in the order you will explain them. Use 1-indexed line numbers. Call all of them — the canvas handles the visual timing automatically and will reveal each highlight in sequence as you speak.
+If [canvas: empty] appears, your very first action on the next turn is to call code_viewer_show again with the code you were discussing, then continue.
+
+When walking through code section by section, call code_viewer_next_highlight(start_line, end_line) once for each section you plan to cover, in order. Use 1-indexed line numbers. Fire all of them upfront — the canvas staggers the visual reveal automatically while you speak.
+
+CRITICAL — After interruption: if the canvas state contains "highlights cleared", you MUST call code_viewer_next_highlight at the very start of your response, one call per section you are about to discuss. Highlights do not survive interruptions. You must re-issue them every single turn you discuss code sections. Never skip this.
+
+═══ IMAGE ═══
+When a visual illustration would help, call image_show(query) with a concise search term. The image appears on the canvas silently. Never announce it. Good queries: "merge sort algorithm diagram", "binary search tree", "recursion call stack visualization".
 
 Keep spoken responses conversational and natural for audio delivery.`;
+
+// ---------------------------------------------------------------------------
+// Wikipedia image search — no API key required
+// ---------------------------------------------------------------------------
+async function fetchWikipediaImage(query: string): Promise<string | null> {
+  try {
+    const headers = { 'User-Agent': 'Synapse/1.0 (educational demo)' };
+
+    // Strip generic filler words so we hit a real Wikipedia article title
+    const cleaned = query
+      .replace(/\b(diagram|visualization|algorithm|chart|image|picture|example|illustration|concept|overview)\b/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim() || query;
+
+    // Fast path: REST summary API resolves the title and returns a thumbnail in one call
+    const summaryRes = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(cleaned)}`,
+      { headers }
+    );
+    if (summaryRes.ok) {
+      const data = await summaryRes.json() as { thumbnail?: { source: string }; title?: string };
+      if (data.thumbnail?.source) {
+        console.log(`[wikipedia] direct hit: "${data.title}" → ${data.thumbnail.source}`);
+        return data.thumbnail.source;
+      }
+    }
+
+    // Fallback: opensearch for the best matching title, then REST summary
+    const searchRes = await fetch(
+      `https://en.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(cleaned)}&limit=1&format=json`,
+      { headers }
+    );
+    if (!searchRes.ok) return null;
+    const searchData = await searchRes.json() as [string, string[]];
+    const title = searchData[1]?.[0];
+    if (!title) { console.warn(`[wikipedia] no article found for "${cleaned}"`); return null; }
+
+    const fallbackRes = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
+      { headers }
+    );
+    if (!fallbackRes.ok) return null;
+    const fallbackData = await fallbackRes.json() as { thumbnail?: { source: string }; title?: string };
+    const url = fallbackData.thumbnail?.source ?? null;
+    console.log(`[wikipedia] fallback: "${title}" → ${url ?? 'no image'}`);
+    return url;
+  } catch (e) {
+    console.error('[wikipedia] fetch error:', e);
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // HTTP + WebSocket server
@@ -86,7 +144,8 @@ wss.on('connection', async (browserWs) => {
         },
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        onmessage: (message: any) => {
+        onmessage: async (message: any) => {
+          try {
           // --- Audio output ---
           const parts = message.serverContent?.modelTurn?.parts ?? [];
           for (const part of parts) {
@@ -108,53 +167,73 @@ wss.on('connection', async (browserWs) => {
           }
 
           // --- Tool calls ---
+          // All responses for a single toolCall message must be sent in ONE sendToolResponse call.
           const functionCalls = message.toolCall?.functionCalls ?? [];
-          for (const fc of functionCalls) {
-            try {
-              const args = (fc.args ?? {}) as Record<string, unknown>;
-              const result = validate(fc.name as string, args);
+          if (functionCalls.length > 0) {
+            const responses: Array<{
+              id: string;
+              name: string;
+              response: Record<string, unknown>;
+              scheduling: FunctionResponseScheduling;
+            }> = [];
 
-              if (isError(result)) {
-                console.warn(`[validator] Rejected call to "${fc.name}": ${result.reason}`);
-                Promise.resolve(
-                  geminiSession.sendToolResponse({
-                    functionResponses: [
-                      {
-                        id: fc.id,
-                        name: fc.name,
-                        response: { error: result.reason },
-                        scheduling: FunctionResponseScheduling.SILENT,
-                      },
-                    ],
-                  })
-                ).catch((e: unknown) => console.error(`[proxy] sendToolResponse (rejected) error:`, e));
-                continue;
+            for (const fc of functionCalls) {
+              try {
+                const args = (fc.args ?? {}) as Record<string, unknown>;
+                const result = validate(fc.name as string, args);
+
+                if (isError(result)) {
+                  console.warn(`[validator] Rejected call to "${fc.name}": ${result.reason}`);
+                  responses.push({
+                    id: fc.id,
+                    name: fc.name,
+                    response: { error: result.reason },
+                    scheduling: FunctionResponseScheduling.SILENT,
+                  });
+                  continue;
+                }
+
+                console.log(`[validator] Accepted: ${result.name}`, result.args);
+
+                // image_show needs an async Unsplash fetch before we can forward to browser
+                if (result.name === 'image_show') {
+                  const query = result.args.query as string;
+                  const imageUrl = await fetchWikipediaImage(query);
+                  console.log(`[unsplash] query="${query}" → ${imageUrl ?? 'null'}`);
+                  safeSend({ type: 'tool_call', name: 'image_show', args: { query, url: imageUrl } });
+                  responses.push({
+                    id: fc.id,
+                    name: fc.name,
+                    response: { result: 'ok', url: imageUrl ?? '' },
+                    scheduling: FunctionResponseScheduling.SILENT,
+                  });
+                } else {
+                  safeSend({ type: 'tool_call', name: result.name, args: result.args });
+                  responses.push({
+                    id: fc.id,
+                    name: fc.name,
+                    response: { result: 'ok' },
+                    scheduling: FunctionResponseScheduling.SILENT,
+                  });
+                }
+              } catch (e) {
+                console.error(`[proxy] Unexpected error handling tool call "${fc.name}":`, e);
               }
-
-              console.log(`[validator] Accepted: ${result.name}`, result.args);
-
-              safeSend({
-                type: 'tool_call',
-                name: result.name,
-                args: result.args,
-              });
-
-              // NON_BLOCKING + SILENT — model keeps talking uninterrupted
-              Promise.resolve(
-                geminiSession.sendToolResponse({
-                  functionResponses: [
-                    {
-                      id: fc.id,
-                      name: fc.name,
-                      response: { result: 'ok' },
-                      scheduling: FunctionResponseScheduling.SILENT,
-                    },
-                  ],
-                })
-              ).catch((e: unknown) => console.error(`[proxy] sendToolResponse error for "${fc.name}":`, e));
-            } catch (e) {
-              console.error(`[proxy] Unexpected error handling tool call "${fc.name}":`, e);
             }
+
+            if (responses.length > 0) {
+              // NON_BLOCKING + SILENT — model keeps talking uninterrupted
+              try {
+                Promise.resolve(
+                  geminiSession.sendToolResponse({ functionResponses: responses })
+                ).catch((e: unknown) => console.error(`[proxy] sendToolResponse error:`, e));
+              } catch (e) {
+                console.error(`[proxy] sendToolResponse threw synchronously:`, e);
+              }
+            }
+          }
+          } catch (e) {
+            console.error('[proxy] Uncaught error in onmessage:', e);
           }
         },
 

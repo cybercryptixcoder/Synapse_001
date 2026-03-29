@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CanvasProvider, useCanvas } from './canvas/CanvasProvider';
 import { Canvas } from './canvas/Canvas';
 import { useLiveSession, type ToolCall } from './hooks/useLiveSession';
@@ -6,6 +6,7 @@ import { useAudioIO } from './hooks/useAudioIO';
 import { useAudioPlayback } from './hooks/useAudioPlayback';
 import type { CodeViewerData } from './widgets/CodeViewer';
 import type { CallStackData } from './widgets/CallStack';
+import type { ImageWidgetData } from './widgets/ImageWidget';
 import './App.css';
 
 // Staggered highlight timing: first fires after a short pause,
@@ -26,6 +27,13 @@ function AppInner() {
   const { addWidget, removeWidget, updateWidget, clearWidgets, getInventoryString } = useCanvas();
   const { playChunk, flush, stop } = useAudioPlayback();
 
+  // Debug log panel
+  const [logs, setLogs] = useState<string[]>([]);
+  const addLog = useCallback((entry: string) => {
+    const ts = new Date().toTimeString().slice(0, 8);
+    setLogs(prev => [...prev.slice(-149), `[${ts}] ${entry}`]);
+  }, []);
+
   // Track the active code viewer widget so highlight can update it
   const codeViewerIdRef   = useRef<string | null>(null);
   const codeViewerDataRef = useRef<CodeViewerData>({ language: '', code: '' });
@@ -33,10 +41,15 @@ function AppInner() {
   // Staggered highlight state
   const pendingTimersRef        = useRef<ReturnType<typeof setTimeout>[]>([]);
   const pendingHighlightCountRef = useRef(0);
+  // Set true when interrupt clears highlights — injected into canvas state so model re-issues them
+  const highlightsClearedRef = useRef(false);
 
   // Always-current canvas inventory for turn_complete injection
   const inventoryRef = useRef(getInventoryString);
   useEffect(() => { inventoryRef.current = getInventoryString; }, [getInventoryString]);
+
+  // Track the active image widget ID so we replace rather than stack
+  const imageWidgetIdRef = useRef<string | null>(null);
 
   // Track the active call stack widget ID so push/pop/overflow can mutate it
   const callStackIdRef   = useRef<string | null>(null);
@@ -53,16 +66,29 @@ function AppInner() {
 
   const handleToolCall = useCallback(
     (call: ToolCall) => {
+      addLog(`tool:${call.name} ${JSON.stringify(call.name === 'code_viewer_show'
+        ? { language: (call.args as {language:string}).language, code: String((call.args as {code:string}).code).slice(0,40).replace(/\n/g,'↵') + '…' }
+        : call.args
+      )}`);
+
       switch (call.name) {
 
         // ── Code Viewer ──────────────────────────────────────────────
         case 'code_viewer_show': {
           const { language, code } = call.args as { language: string; code: string };
           clearPendingHighlights();
-          const data: CodeViewerData = { language, code };
+          highlightsClearedRef.current = false;
+          // Normalize literal escape sequences the model sometimes sends instead of real characters
+          const normalizedCode = code.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+          const data: CodeViewerData = { language, code: normalizedCode };
           codeViewerDataRef.current = data;
-          const id = addWidget('code_viewer', data, 2, 2);
-          codeViewerIdRef.current = id;
+          if (codeViewerIdRef.current) {
+            // Replace existing code viewer in place — don't create a second widget
+            updateWidget(codeViewerIdRef.current, data);
+          } else {
+            const id = addWidget('code_viewer', data, 2, 2);
+            codeViewerIdRef.current = id;
+          }
           break;
         }
 
@@ -70,6 +96,7 @@ function AppInner() {
           if (!codeViewerIdRef.current) break;
           const { start_line, end_line } = call.args as { start_line: number; end_line: number };
           if (!start_line || !end_line || start_line <= 0 || end_line <= 0) break;
+          highlightsClearedRef.current = false;
 
           // Schedule this highlight with increasing delay so batched calls
           // cascade one-at-a-time while the agent speaks.
@@ -89,6 +116,20 @@ function AppInner() {
           }, delay);
 
           pendingTimersRef.current.push(timerId);
+          break;
+        }
+
+        // ── Image ────────────────────────────────────────────────────
+        case 'image_show': {
+          const { query, url } = call.args as { query: string; url: string | null };
+          if (!url) break; // backend fetch failed — skip widget silently
+          const data: ImageWidgetData = { query, url };
+          if (imageWidgetIdRef.current) {
+            updateWidget(imageWidgetIdRef.current, data);
+          } else {
+            const id = addWidget('image', data, 2, 2);
+            imageWidgetIdRef.current = id;
+          }
           break;
         }
 
@@ -152,27 +193,49 @@ function AppInner() {
         }
       }
     },
-    [addWidget, removeWidget, updateWidget]
+    [addWidget, removeWidget, updateWidget, addLog]
   );
 
   const { connect, disconnect, sendAudio, sendContext, status } = useLiveSession({
     onAudioChunk: (base64) => playChunk(base64),
     onInterrupted: () => {
+      addLog('interrupted → flush audio, cancel highlights (canvas kept)');
       flush();
-      clearWidgets();
       clearPendingHighlights();
-      codeViewerIdRef.current = null;
-      codeViewerDataRef.current = { language: '', code: '' };
+      // Clear the active highlight band so stale highlights don't linger after a barge-in
+      if (codeViewerIdRef.current) {
+        const cleared: CodeViewerData = { language: codeViewerDataRef.current.language, code: codeViewerDataRef.current.code };
+        codeViewerDataRef.current = cleared;
+        updateWidget(codeViewerIdRef.current, cleared);
+        // Signal to the model (via next turn_complete injection) that it must re-issue highlights
+        highlightsClearedRef.current = true;
+      }
     },
     onToolCall: handleToolCall,
     onTurnComplete: () => {
-      sendContext(`[canvas: ${inventoryRef.current()}]`);
+      const inv = inventoryRef.current();
+      // Fire the highlights-cleared note once, then reset — no need to repeat every turn
+      const note = highlightsClearedRef.current && codeViewerIdRef.current
+        ? ' | highlights cleared — re-call code_viewer_next_highlight for each section on your next turn'
+        : '';
+      if (note) highlightsClearedRef.current = false;
+      addLog(`turn_complete → canvas:${inv || 'empty'}${note}`);
+      sendContext(`[canvas: ${inv}${note}]`);
     },
   });
 
   const { start: startMic, stop: stopMic, isRecording } = useAudioIO(
     useCallback((chunk: string) => sendAudio(chunk), [sendAudio])
   );
+
+  // Log session status changes
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    if (status !== prevStatusRef.current) {
+      addLog(`session:${status}`);
+      prevStatusRef.current = status;
+    }
+  }, [status, addLog]);
 
   async function handleStart() {
     try {
@@ -187,9 +250,12 @@ function AppInner() {
     stopMic();
     disconnect();
     stop();
+    clearWidgets();
     clearPendingHighlights();
+    highlightsClearedRef.current = false;
     codeViewerIdRef.current = null;
     codeViewerDataRef.current = { language: '', code: '' };
+    imageWidgetIdRef.current = null;
     callStackIdRef.current = null;
     callStackDataRef.current = { frames: [], overflow: false };
     frameCounterRef.current = 0;
@@ -220,6 +286,8 @@ function AppInner() {
 
         <Canvas />
       </main>
+
+      <LogPanel logs={logs} />
     </div>
   );
 }
@@ -229,4 +297,47 @@ function statusLabel(status: string, isRecording: boolean): string {
   if (status === 'connected' && isRecording) return 'Listening';
   if (status === 'connected') return 'Connected';
   return 'Disconnected';
+}
+
+function LogPanel({ logs }: { logs: string[] }) {
+  const [open, setOpen] = useState(true);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (open && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [logs, open]);
+
+  return (
+    <div style={{
+      position: 'fixed', bottom: 12, right: 12, width: 420, zIndex: 9999,
+      background: '#0d0d0d', border: '1px solid #333', borderRadius: 6,
+      fontFamily: 'monospace', fontSize: 11, color: '#a0ffa0',
+      boxShadow: '0 4px 16px rgba(0,0,0,0.6)',
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '4px 8px', borderBottom: open ? '1px solid #333' : 'none',
+        cursor: 'pointer', userSelect: 'none', color: '#888',
+      }} onClick={() => setOpen(o => !o)}>
+        <span>debug log ({logs.length})</span>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            onClick={e => { e.stopPropagation(); navigator.clipboard.writeText(logs.join('\n')); }}
+            style={{ fontSize: 10, background: '#222', color: '#ccc', border: '1px solid #444', cursor: 'pointer', borderRadius: 3, padding: '1px 6px' }}
+          >copy</button>
+          <span>{open ? '▼' : '▲'}</span>
+        </div>
+      </div>
+      {open && (
+        <div ref={bodyRef} style={{ maxHeight: 200, overflowY: 'auto', padding: '4px 8px' }}>
+          {logs.length === 0
+            ? <div style={{ color: '#555' }}>no events yet</div>
+            : logs.map((l, i) => <div key={i} style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{l}</div>)
+          }
+        </div>
+      )}
+    </div>
+  );
 }

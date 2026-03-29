@@ -56,6 +56,28 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
 
   // ------------------------------------------------------------------
+  // Image
+  // ------------------------------------------------------------------
+  {
+    name: 'image_show',
+    description:
+      'Search for a relevant image or diagram and display it on the visual canvas. ' +
+      'Call this when a visual illustration would complement the explanation. ' +
+      'Pass a concise, descriptive search query.',
+    behavior: Behavior.NON_BLOCKING,
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: {
+          type: Type.STRING,
+          description: 'Search query for the image, e.g. "merge sort diagram", "binary tree visualization".',
+        },
+      },
+      required: ['query'],
+    },
+  },
+
+  // ------------------------------------------------------------------
   // Call Stack — BOXED (disabled, component preserved)
   // ------------------------------------------------------------------
 ];
