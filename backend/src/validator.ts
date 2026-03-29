@@ -4,7 +4,7 @@
  * Every tool call is checked before it touches state.
  */
 
-type ArgType = 'string' | 'number' | 'boolean';
+type ArgType = 'string' | 'number' | 'boolean' | 'object';
 
 interface ArgSpec {
   type: ArgType;
@@ -24,8 +24,7 @@ const REGISTRY: Record<string, ToolSpec> = {
       code:     { type: 'string', required: true },
     },
   },
-
-  code_viewer_highlight: {
+  code_viewer_next_highlight: {
     args: {
       start_line: { type: 'number', required: true },
       end_line:   { type: 'number', required: true },

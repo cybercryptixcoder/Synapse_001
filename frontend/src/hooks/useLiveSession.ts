@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useEffect, useState } from 'react';
 
 export type SessionStatus = 'disconnected' | 'connecting' | 'connected';
 
@@ -11,15 +11,28 @@ interface UseLiveSessionOptions {
   onAudioChunk: (base64: string, mimeType: string) => void;
   onInterrupted: () => void;
   onToolCall: (call: ToolCall) => void;
+  onTurnComplete?: () => void;
 }
 
 /**
  * Manages the WebSocket connection to the backend proxy.
  * Routes incoming audio chunks, tool calls, and session signals.
  */
-export function useLiveSession({ onAudioChunk, onInterrupted, onToolCall }: UseLiveSessionOptions) {
+export function useLiveSession({ onAudioChunk, onInterrupted, onToolCall, onTurnComplete }: UseLiveSessionOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<SessionStatus>('disconnected');
+
+  // Refs so ws.onmessage always calls the latest version of each callback
+  // regardless of when connect() was called.
+  const onAudioChunkRef = useRef(onAudioChunk);
+  const onInterruptedRef = useRef(onInterrupted);
+  const onToolCallRef = useRef(onToolCall);
+  const onTurnCompleteRef = useRef(onTurnComplete);
+
+  useEffect(() => { onAudioChunkRef.current = onAudioChunk; }, [onAudioChunk]);
+  useEffect(() => { onInterruptedRef.current = onInterrupted; }, [onInterrupted]);
+  useEffect(() => { onToolCallRef.current = onToolCall; }, [onToolCall]);
+  useEffect(() => { onTurnCompleteRef.current = onTurnComplete; }, [onTurnComplete]);
 
   function connect(): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -39,15 +52,16 @@ export function useLiveSession({ onAudioChunk, onInterrupted, onToolCall }: UseL
               resolve();
               break;
             case 'audio':
-              onAudioChunk(msg.data as string, msg.mimeType as string);
+              onAudioChunkRef.current(msg.data as string, msg.mimeType as string);
               break;
             case 'interrupted':
-              onInterrupted();
+              onInterruptedRef.current();
               break;
             case 'tool_call':
-              onToolCall({ name: msg.name as string, args: msg.args as Record<string, unknown> });
+              onToolCallRef.current({ name: msg.name as string, args: msg.args as Record<string, unknown> });
               break;
             case 'turn_complete':
+              onTurnCompleteRef.current?.();
               break;
           }
         } catch (err) {

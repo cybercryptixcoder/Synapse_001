@@ -12,8 +12,8 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     name: 'code_viewer_show',
     description:
       'Display a code snippet on the visual canvas. ' +
-      'You MUST call this every time you reference or show a specific piece of code — no exceptions. ' +
-      'Call it mid-sentence without announcing it. Keep talking. The canvas updates silently.',
+      'You MUST call this every time you reference or show specific code — no exceptions. ' +
+      'This applies even after an interruption. Call it without announcing it.',
     behavior: Behavior.NON_BLOCKING,
     parameters: {
       type: Type.OBJECT,
@@ -32,22 +32,23 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
 
   {
-    name: 'code_viewer_highlight',
+    name: 'code_viewer_next_highlight',
     description:
       'Highlight a range of lines in the current code block. ' +
-      'Call this mid-sentence at the exact moment you reference those lines — e.g. as you say "notice line 4 here". ' +
-      'Lines are 1-indexed. To clear the highlight, call with start_line and end_line both set to 0.',
+      'Call this once for each section of code you plan to explain, in the order you will explain them. ' +
+      'Provide the exact line numbers for that section. ' +
+      'The canvas handles visual timing automatically — just call them in the correct order.',
     behavior: Behavior.NON_BLOCKING,
     parameters: {
       type: Type.OBJECT,
       properties: {
         start_line: {
           type: Type.NUMBER,
-          description: 'First line to highlight (1-indexed).',
+          description: 'First line of the section to highlight (1-indexed).',
         },
         end_line: {
           type: Type.NUMBER,
-          description: 'Last line to highlight (1-indexed, inclusive).',
+          description: 'Last line of the section to highlight (1-indexed, inclusive).',
         },
       },
       required: ['start_line', 'end_line'],
