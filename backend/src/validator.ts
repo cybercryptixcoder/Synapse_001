@@ -31,6 +31,13 @@ const REGISTRY: Record<string, ToolSpec> = {
     },
   },
 
+  // Text
+  text_show: {
+    args: {
+      content: { type: 'string', required: true },
+    },
+  },
+
   // Image
   image_show: {
     args: {

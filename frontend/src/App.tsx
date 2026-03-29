@@ -7,6 +7,7 @@ import { useAudioPlayback } from './hooks/useAudioPlayback';
 import type { CodeViewerData } from './widgets/CodeViewer';
 import type { CallStackData } from './widgets/CallStack';
 import type { ImageWidgetData } from './widgets/ImageWidget';
+import type { TextWidgetData } from './widgets/TextWidget';
 import './App.css';
 
 // Staggered highlight timing: first fires after a short pause,
@@ -130,6 +131,14 @@ function AppInner() {
             const id = addWidget('image', data, 2, 2);
             imageWidgetIdRef.current = id;
           }
+          break;
+        }
+
+        // ── Text ─────────────────────────────────────────────────────
+        case 'text_show': {
+          const { content } = call.args as { content: string };
+          const data: TextWidgetData = { content };
+          addWidget('text', data, 2, 2);
           break;
         }
 

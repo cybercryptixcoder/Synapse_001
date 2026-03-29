@@ -3,6 +3,7 @@ import { useCanvas } from './CanvasProvider';
 import { CodeViewer, type CodeViewerData } from '../widgets/CodeViewer';
 import { CallStack, type CallStackData } from '../widgets/CallStack';
 import { ImageWidget, type ImageWidgetData } from '../widgets/ImageWidget';
+import { TextWidget, type TextWidgetData } from '../widgets/TextWidget';
 import './Canvas.css';
 
 export function Canvas() {
@@ -51,6 +52,8 @@ function renderWidget(type: string, data: unknown) {
       return <CallStack data={data as CallStackData} />;
     case 'image':
       return <ImageWidget data={data as ImageWidgetData} />;
+    case 'text':
+      return <TextWidget data={data as TextWidgetData} />;
     default:
       return null;
   }

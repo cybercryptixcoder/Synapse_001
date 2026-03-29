@@ -56,6 +56,28 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
 
   // ------------------------------------------------------------------
+  // Text
+  // ------------------------------------------------------------------
+  {
+    name: 'text_show',
+    description:
+      'Display a markdown text block on the visual canvas. ' +
+      'Use for key points, step-by-step breakdowns, summaries, or any structured text that complements your speech. ' +
+      'Supports **bold**, *italic*, headings, and nested lists.',
+    behavior: Behavior.NON_BLOCKING,
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        content: {
+          type: Type.STRING,
+          description: 'Markdown-formatted text. Use **bold** for emphasis, ## for headings, - for lists.',
+        },
+      },
+      required: ['content'],
+    },
+  },
+
+  // ------------------------------------------------------------------
   // Image
   // ------------------------------------------------------------------
   {
