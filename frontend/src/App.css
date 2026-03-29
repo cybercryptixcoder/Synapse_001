@@ -22,122 +22,72 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 16px 24px;
-  border-bottom: 1px solid #222;
+  padding: 14px 24px;
+  border-bottom: 1px solid #1e1e1e;
+  flex-shrink: 0;
 }
 
 .app-header h1 {
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 600;
   letter-spacing: 0.05em;
   color: #fff;
 }
 
 .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: #444;
+  background: #333;
   transition: background 0.3s;
 }
-.status-dot.status-connecting { background: #f5a623; }
-.status-dot.status-connected  { background: #4caf50; }
-.status-dot.status-disconnected { background: #444; }
+.status-dot.status-connecting  { background: #f5a623; }
+.status-dot.status-connected   { background: #4caf50; }
+.status-dot.status-disconnected { background: #333; }
 
 /* Main */
 .app-main {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  padding: 16px 24px 20px;
+  gap: 16px;
+}
+
+/* Controls bar */
+.controls-bar {
+  display: flex;
   align-items: center;
-  padding: 48px 24px 24px;
-  gap: 32px;
+  gap: 16px;
+  flex-shrink: 0;
 }
 
 .status-label {
-  font-size: 0.85rem;
-  color: #888;
+  font-size: 0.78rem;
+  color: #555;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  min-width: 80px;
 }
 
-/* Controls */
 .controls {
   display: flex;
-  gap: 12px;
+  gap: 8px;
 }
 
 .btn {
-  padding: 10px 28px;
+  padding: 7px 22px;
   border: none;
-  border-radius: 6px;
-  font-size: 0.9rem;
+  border-radius: 5px;
+  font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
   transition: opacity 0.15s;
 }
 .btn:disabled {
-  opacity: 0.3;
+  opacity: 0.25;
   cursor: not-allowed;
 }
-.btn-start {
-  background: #4caf50;
-  color: #fff;
-}
-.btn-stop {
-  background: #e53935;
-  color: #fff;
-}
-
-/* Debug panel */
-.debug-panel {
-  width: 100%;
-  max-width: 900px;
-  border: 1px dashed #333;
-  border-radius: 8px;
-  padding: 16px;
-  flex: 1;
-  overflow-y: auto;
-}
-
-.debug-title {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #555;
-  margin-bottom: 12px;
-}
-
-.debug-empty {
-  color: #444;
-  font-size: 0.85rem;
-}
-
-.debug-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.debug-item {
-  background: #1a1a1a;
-  border-radius: 6px;
-  padding: 10px 12px;
-}
-
-.debug-name {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #4caf50;
-  display: block;
-  margin-bottom: 6px;
-}
-
-.debug-args {
-  font-size: 0.75rem;
-  color: #aaa;
-  white-space: pre-wrap;
-  word-break: break-all;
-  margin: 0;
-}
+.btn-start { background: #4caf50; color: #fff; }
+.btn-stop  { background: #e53935; color: #fff; }

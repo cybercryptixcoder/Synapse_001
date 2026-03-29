@@ -1,23 +1,49 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect } from 'react';
+import { CanvasProvider, useCanvas } from './canvas/CanvasProvider';
+import { Canvas } from './canvas/Canvas';
 import { useLiveSession, type ToolCall } from './hooks/useLiveSession';
 import { useAudioIO } from './hooks/useAudioIO';
 import { useAudioPlayback } from './hooks/useAudioPlayback';
+import type { CodeViewerData } from './widgets/CodeViewer';
 import './App.css';
 
 export default function App() {
+  return (
+    <CanvasProvider>
+      <AppInner />
+    </CanvasProvider>
+  );
+}
+
+function AppInner() {
+  const { addWidget, getInventoryString, widgets } = useCanvas();
   const { playChunk, flush } = useAudioPlayback();
-  const [toolLog, setToolLog] = useState<ToolCall[]>([]);
 
-  const handleToolCall = useCallback((call: ToolCall) => {
-    console.log('[canvas] tool_call received:', call.name, call.args);
-    setToolLog((prev) => [call, ...prev].slice(0, 10));
-  }, []);
+  const handleToolCall = useCallback(
+    (call: ToolCall) => {
+      switch (call.name) {
+        case 'code_viewer_show': {
+          const { language, code } = call.args as unknown as CodeViewerData;
+          addWidget('code_viewer', { language, code }, 3, 2);
+          break;
+        }
+      }
+    },
+    [addWidget]
+  );
 
-  const { connect, disconnect, sendAudio, status } = useLiveSession({
+  const { connect, disconnect, sendAudio, sendContext, status } = useLiveSession({
     onAudioChunk: (base64) => playChunk(base64),
     onInterrupted: () => flush(),
     onToolCall: handleToolCall,
   });
+
+  // Inject updated canvas inventory into model context whenever widgets change
+  useEffect(() => {
+    if (status === 'connected') {
+      sendContext(getInventoryString());
+    }
+  }, [widgets, status, sendContext, getInventoryString]);
 
   const { start: startMic, stop: stopMic, isRecording } = useAudioIO(
     useCallback((chunk: string) => sendAudio(chunk), [sendAudio])
@@ -49,33 +75,19 @@ export default function App() {
       </header>
 
       <main className="app-main">
-        <p className="status-label">{statusLabel(status, isRecording)}</p>
-
-        <div className="controls">
-          <button onClick={handleStart} disabled={!canStart} className="btn btn-start">
-            Start
-          </button>
-          <button onClick={handleStop} disabled={!canStop} className="btn btn-stop">
-            Stop
-          </button>
+        <div className="controls-bar">
+          <p className="status-label">{statusLabel(status, isRecording)}</p>
+          <div className="controls">
+            <button onClick={handleStart} disabled={!canStart} className="btn btn-start">
+              Start
+            </button>
+            <button onClick={handleStop} disabled={!canStop} className="btn btn-stop">
+              Stop
+            </button>
+          </div>
         </div>
 
-        {/* Tool call debug panel */}
-        <div className="debug-panel">
-          <p className="debug-title">Tool calls received</p>
-          {toolLog.length === 0 ? (
-            <p className="debug-empty">None yet — ask the agent to show you some code</p>
-          ) : (
-            <ul className="debug-list">
-              {toolLog.map((call, i) => (
-                <li key={i} className="debug-item">
-                  <span className="debug-name">{call.name}</span>
-                  <pre className="debug-args">{JSON.stringify(call.args, null, 2)}</pre>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <Canvas />
       </main>
     </div>
   );

@@ -166,6 +166,10 @@ wss.on('connection', async (browserWs) => {
           },
         });
       }
+
+      if (msg.type === 'context' && geminiSession) {
+        geminiSession.sendRealtimeInput({ text: msg.text as string });
+      }
     } catch (err) {
       console.error('[proxy] Bad message from browser:', err);
     }

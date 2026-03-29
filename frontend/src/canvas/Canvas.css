@@ -1,0 +1,23 @@
+.canvas-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+  font-size: 0.85rem;
+  border: 1px dashed #222;
+  border-radius: 8px;
+}
+
+.canvas-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.canvas-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: 200px;
+  gap: 12px;
+}

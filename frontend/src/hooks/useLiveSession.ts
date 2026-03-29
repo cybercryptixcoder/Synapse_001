@@ -45,11 +45,9 @@ export function useLiveSession({ onAudioChunk, onInterrupted, onToolCall }: UseL
               onInterrupted();
               break;
             case 'tool_call':
-              console.log('[tool_call]', msg.name, msg.args);
               onToolCall({ name: msg.name as string, args: msg.args as Record<string, unknown> });
               break;
             case 'turn_complete':
-              // No action needed yet
               break;
           }
         } catch (err) {
@@ -78,11 +76,18 @@ export function useLiveSession({ onAudioChunk, onInterrupted, onToolCall }: UseL
     }
   }
 
+  /** Inject canvas state into the model's context. */
+  function sendContext(text: string) {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'context', text }));
+    }
+  }
+
   function disconnect() {
     wsRef.current?.close();
     wsRef.current = null;
     setStatus('disconnected');
   }
 
-  return { connect, disconnect, sendAudio, status };
+  return { connect, disconnect, sendAudio, sendContext, status };
 }
