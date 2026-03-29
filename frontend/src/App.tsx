@@ -44,7 +44,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <h1>BareMinimum</h1>
+        <h1>Synapse</h1>
         <div className={`status-dot status-${status}`} title={status} />
       </header>
 

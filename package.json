@@ -1,5 +1,5 @@
 {
-  "name": "bareminimum",
+  "name": "synapse",
   "private": true,
   "workspaces": [
     "frontend",
