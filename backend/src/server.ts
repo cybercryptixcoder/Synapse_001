@@ -2,20 +2,19 @@ import 'dotenv/config';
 import express from 'express';
 import http from 'http';
 import WebSocket, { WebSocketServer } from 'ws';
-import { GoogleGenAI, Modality } from '@google/genai';
+import { GoogleGenAI, Modality, FunctionResponseScheduling } from '@google/genai';
 import { TOOL_DECLARATIONS } from './tools.js';
 import { validate, isError } from './validator.js';
 
-const MODEL = 'gemini-live-2.5-flash-native-audio';
+// gemini-2.5-flash-native-audio-preview-12-2025 supports NON_BLOCKING tool calls
+const MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';
 const PORT = Number(process.env.PORT) || 3001;
 
 // ---------------------------------------------------------------------------
-// Gemini client — Vertex AI, picks up GOOGLE_APPLICATION_CREDENTIALS via ADC
+// Gemini client — standard Gemini API (supports NON_BLOCKING tool calls)
 // ---------------------------------------------------------------------------
 const ai = new GoogleGenAI({
-  vertexai: true,
-  project: process.env.GOOGLE_CLOUD_PROJECT!,
-  location: process.env.GOOGLE_CLOUD_LOCATION ?? 'us-central1',
+  apiKey: process.env.GEMINI_API_KEY!,
 });
 
 const SYSTEM_PROMPT = `You are a helpful, knowledgeable voice assistant with access to a live visual canvas that appears alongside this conversation.
@@ -106,13 +105,13 @@ wss.on('connection', async (browserWs) => {
 
             if (isError(result)) {
               console.warn(`[validator] Rejected call to "${fc.name}": ${result.reason}`);
-              // Send an error response back so the model isn't left hanging
               geminiSession.sendToolResponse({
                 functionResponses: [
                   {
                     id: fc.id,
                     name: fc.name,
-                    response: { error: result.reason, scheduling: 'SILENT' },
+                    response: { error: result.reason },
+                    scheduling: FunctionResponseScheduling.SILENT,
                   },
                 ],
               });
@@ -121,20 +120,20 @@ wss.on('connection', async (browserWs) => {
 
             console.log(`[validator] Accepted: ${result.name}`, result.args);
 
-            // Forward validated call to browser for logging (no canvas yet)
             safeSend({
               type: 'tool_call',
               name: result.name,
               args: result.args,
             });
 
-            // Acknowledge silently — model keeps talking uninterrupted
+            // NON_BLOCKING + SILENT — model keeps talking uninterrupted
             geminiSession.sendToolResponse({
               functionResponses: [
                 {
                   id: fc.id,
                   name: fc.name,
-                  response: { result: 'ok', scheduling: 'SILENT' },
+                  response: { result: 'ok' },
+                  scheduling: FunctionResponseScheduling.SILENT,
                 },
               ],
             });

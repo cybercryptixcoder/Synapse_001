@@ -1,8 +1,8 @@
-import { Type, type FunctionDeclaration } from '@google/genai';
+import { Type, Behavior, type FunctionDeclaration } from '@google/genai';
 
 /**
  * All canvas tool declarations sent to Gemini at session setup.
- * Only code_viewer_show is registered for Step 2 — more will be added per step.
+ * NON_BLOCKING — model does not pause speech while waiting for the tool response.
  */
 export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
@@ -11,6 +11,7 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
       'Display a code snippet on the visual canvas alongside your voice explanation. ' +
       'Call this mid-sentence as soon as you want the code to appear — do not announce that you are showing code, just call it and keep talking. ' +
       'The canvas updates silently while you speak.',
+    behavior: Behavior.NON_BLOCKING,
     parameters: {
       type: Type.OBJECT,
       properties: {
