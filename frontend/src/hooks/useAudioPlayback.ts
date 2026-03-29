@@ -10,6 +10,8 @@ const OUTPUT_SAMPLE_RATE = 24000;
 export function useAudioPlayback() {
   const ctxRef = useRef<AudioContext | null>(null);
   const nextPlayAtRef = useRef<number>(0);
+  // Track all scheduled sources so flush() can stop them individually
+  const sourcesRef = useRef<AudioBufferSourceNode[]>([]);
 
   function getCtx(): AudioContext {
     if (!ctxRef.current || ctxRef.current.state === 'closed') {
@@ -43,23 +45,39 @@ export function useAudioPlayback() {
     source.buffer = audioBuffer;
     source.connect(ctx.destination);
 
+    // Track the source; remove it from the list once it finishes naturally
+    sourcesRef.current.push(source);
+    source.onended = () => {
+      sourcesRef.current = sourcesRef.current.filter((s) => s !== source);
+    };
+
     const now = ctx.currentTime;
     const startAt = Math.max(now, nextPlayAtRef.current);
     source.start(startAt);
     nextPlayAtRef.current = startAt + audioBuffer.duration;
   }
 
-  /** Call on barge-in / interruption to stop queued audio immediately. */
+  /**
+   * Stop all queued audio immediately on barge-in / interruption.
+   * Keeps the AudioContext alive so playback resumes cleanly without
+   * any suspended-state or recreation race conditions.
+   */
   function flush() {
-    if (ctxRef.current) {
-      // Reset the cursor — any buffered sources that haven't started yet
-      // will still fire, but we can't cancel them without closing the context.
-      // Closing and recreating is the cleanest approach.
+    for (const source of sourcesRef.current) {
+      try { source.stop(); } catch (_) { /* already ended */ }
+    }
+    sourcesRef.current = [];
+    nextPlayAtRef.current = ctxRef.current ? ctxRef.current.currentTime : 0;
+  }
+
+  /** Full teardown on session end — closes the AudioContext entirely. */
+  function stop() {
+    flush();
+    if (ctxRef.current && ctxRef.current.state !== 'closed') {
       ctxRef.current.close();
       ctxRef.current = null;
-      nextPlayAtRef.current = 0;
     }
   }
 
-  return { playChunk, flush };
+  return { playChunk, flush, stop };
 }

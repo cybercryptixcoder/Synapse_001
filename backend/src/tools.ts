@@ -31,74 +31,30 @@ export const TOOL_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
 
-  // ------------------------------------------------------------------
-  // Call Stack
-  // ------------------------------------------------------------------
   {
-    name: 'call_stack_show',
+    name: 'code_viewer_highlight',
     description:
-      'Create a call stack visualiser on the canvas. Call this before pushing any frames. ' +
-      'Use when explaining recursion, function call chains, or execution order.',
-    behavior: Behavior.NON_BLOCKING,
-    parameters: {
-      type: Type.OBJECT,
-      properties: {},
-      required: [],
-    },
-  },
-  {
-    name: 'call_stack_push',
-    description:
-      'Push a new frame onto the call stack visualiser. ' +
-      'Call this mid-sentence each time a new function call is made in your explanation.',
+      'Highlight a range of lines in the current code block. ' +
+      'Call this mid-sentence at the exact moment you reference those lines — e.g. as you say "notice line 4 here". ' +
+      'Lines are 1-indexed. To clear the highlight, call with start_line and end_line both set to 0.',
     behavior: Behavior.NON_BLOCKING,
     parameters: {
       type: Type.OBJECT,
       properties: {
-        function_name: {
-          type: Type.STRING,
-          description: 'Name of the function being called, e.g. "fibonacci(3)".',
+        start_line: {
+          type: Type.NUMBER,
+          description: 'First line to highlight (1-indexed).',
         },
-        args: {
-          type: Type.STRING,
-          description: 'Arguments as a short string, e.g. "n=3". Use empty string if none.',
+        end_line: {
+          type: Type.NUMBER,
+          description: 'Last line to highlight (1-indexed, inclusive).',
         },
       },
-      required: ['function_name', 'args'],
+      required: ['start_line', 'end_line'],
     },
   },
-  {
-    name: 'call_stack_pop',
-    description:
-      'Pop the top frame from the call stack visualiser when a function returns. ' +
-      'Call this mid-sentence each time a function returns in your explanation.',
-    behavior: Behavior.NON_BLOCKING,
-    parameters: {
-      type: Type.OBJECT,
-      properties: {},
-      required: [],
-    },
-  },
-  {
-    name: 'call_stack_overflow',
-    description:
-      'Trigger a stack overflow visual state on the call stack — frames pile up with an overflow indicator. ' +
-      'Use when explaining what happens with no base case or infinite recursion.',
-    behavior: Behavior.NON_BLOCKING,
-    parameters: {
-      type: Type.OBJECT,
-      properties: {},
-      required: [],
-    },
-  },
-  {
-    name: 'call_stack_remove',
-    description: 'Remove the call stack widget from the canvas entirely.',
-    behavior: Behavior.NON_BLOCKING,
-    parameters: {
-      type: Type.OBJECT,
-      properties: {},
-      required: [],
-    },
-  },
+
+  // ------------------------------------------------------------------
+  // Call Stack — BOXED (disabled, component preserved)
+  // ------------------------------------------------------------------
 ];

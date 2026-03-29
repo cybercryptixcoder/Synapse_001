@@ -16,7 +16,8 @@ export interface Widget {
 type Action =
   | { type: 'ADD'; widget: Widget }
   | { type: 'REMOVE'; id: string }
-  | { type: 'UPDATE'; id: string; data: unknown };
+  | { type: 'UPDATE'; id: string; data: unknown }
+  | { type: 'CLEAR' };
 
 interface CanvasState {
   widgets: Widget[];
@@ -38,6 +39,8 @@ function reducer(state: CanvasState, action: Action): CanvasState {
           w.id === action.id ? { ...w, data: action.data } : w
         ),
       };
+    case 'CLEAR':
+      return { widgets: [] };
   }
 }
 
@@ -50,6 +53,7 @@ interface CanvasContextValue {
   addWidget: (widgetType: string, data: unknown, cols?: number, rows?: number) => string;
   removeWidget: (id: string) => void;
   updateWidget: (id: string, data: unknown) => void;
+  clearWidgets: () => void;
   getInventoryString: () => string;
 }
 
@@ -77,6 +81,10 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'REMOVE', id });
   }, []);
 
+  const clearWidgets = useCallback(() => {
+    dispatch({ type: 'CLEAR' });
+  }, []);
+
   const updateWidget = useCallback((id: string, data: unknown) => {
     dispatch({ type: 'UPDATE', id, data });
   }, []);
@@ -91,7 +99,7 @@ export function CanvasProvider({ children }: { children: ReactNode }) {
 
   return (
     <CanvasContext.Provider
-      value={{ widgets: state.widgets, addWidget, removeWidget, updateWidget, getInventoryString }}
+      value={{ widgets: state.widgets, addWidget, removeWidget, updateWidget, clearWidgets, getInventoryString }}
     >
       {children}
     </CanvasContext.Provider>

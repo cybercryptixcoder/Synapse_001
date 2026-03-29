@@ -28,22 +28,9 @@ If you receive unclear audio or don't catch what was said, briefly ask the user 
 Tool calls are completely invisible to the user. Never announce one before it fires. Never acknowledge one after it fires. Never say "let me show you", "here is the code", "as you can see on screen", "I've added that", or anything similar. Your speech flows as if the canvas does not exist — you speak, the canvas updates silently on its own.
 
 ═══ CODE VIEWER ═══
-You MUST call code_viewer_show every single time you reference or describe a specific piece of code. This is mandatory — no exceptions. Never describe a concrete code implementation verbally without calling the tool.
+You MUST call code_viewer_show every single time you reference or describe a specific piece of code. This is mandatory — no exceptions. Never describe a concrete code implementation verbally without calling the tool. This rule applies even after an interruption: if the user asks for code after barging in, call code_viewer_show on your very next response that involves code.
 
-═══ CALL STACK ═══
-When explaining recursion, function calls, or execution order, you MUST use the call stack widget. This is mandatory whenever the topic involves calls going into calls.
-
-Rules you must follow exactly:
-
-1. Call call_stack_show first before any pushes.
-
-2. Push ONE frame at a time — at the exact sentence where you name that function call. Not before, not all at once at the start. One frame push = one sentence = one function call being named. As you say "fibonacci(3) calls fibonacci(2)" — push fibonacci(2) at that moment, not earlier.
-
-3. You MUST pop frames as functions return. Walk back up the call stack completely. Every push that went in must come back out as you explain the return. If fibonacci(1) returns first, pop it. Then fibonacci(2) returns, pop it. Continue until the stack is empty or the explanation is done.
-
-4. Complete the full push/pop demonstration. Do not stop halfway.
-
-5. If explaining infinite recursion or a missing base case, push several frames then call call_stack_overflow.
+When walking through code line by line, call code_viewer_highlight with the relevant line range at the exact moment you mention those lines. Move the highlight as you progress through the explanation. Call with start_line=0 and end_line=0 to clear the highlight when done.
 
 Keep spoken responses conversational and natural for audio delivery.`;
 
@@ -67,7 +54,11 @@ wss.on('connection', async (browserWs) => {
 
   const safeSend = (payload: object) => {
     if (browserWs.readyState === WebSocket.OPEN) {
-      browserWs.send(JSON.stringify(payload));
+      try {
+        browserWs.send(JSON.stringify(payload));
+      } catch (e) {
+        console.error('[proxy] safeSend failed:', e);
+      }
     }
   };
 
@@ -117,43 +108,51 @@ wss.on('connection', async (browserWs) => {
           // --- Tool calls ---
           const functionCalls = message.toolCall?.functionCalls ?? [];
           for (const fc of functionCalls) {
-            const args = (fc.args ?? {}) as Record<string, unknown>;
-            const result = validate(fc.name as string, args);
+            try {
+              const args = (fc.args ?? {}) as Record<string, unknown>;
+              const result = validate(fc.name as string, args);
 
-            if (isError(result)) {
-              console.warn(`[validator] Rejected call to "${fc.name}": ${result.reason}`);
-              geminiSession.sendToolResponse({
-                functionResponses: [
-                  {
-                    id: fc.id,
-                    name: fc.name,
-                    response: { error: result.reason },
-                    scheduling: FunctionResponseScheduling.SILENT,
-                  },
-                ],
+              if (isError(result)) {
+                console.warn(`[validator] Rejected call to "${fc.name}": ${result.reason}`);
+                Promise.resolve(
+                  geminiSession.sendToolResponse({
+                    functionResponses: [
+                      {
+                        id: fc.id,
+                        name: fc.name,
+                        response: { error: result.reason },
+                        scheduling: FunctionResponseScheduling.SILENT,
+                      },
+                    ],
+                  })
+                ).catch((e: unknown) => console.error(`[proxy] sendToolResponse (rejected) error:`, e));
+                continue;
+              }
+
+              console.log(`[validator] Accepted: ${result.name}`, result.args);
+
+              safeSend({
+                type: 'tool_call',
+                name: result.name,
+                args: result.args,
               });
-              continue;
+
+              // NON_BLOCKING + SILENT — model keeps talking uninterrupted
+              Promise.resolve(
+                geminiSession.sendToolResponse({
+                  functionResponses: [
+                    {
+                      id: fc.id,
+                      name: fc.name,
+                      response: { result: 'ok' },
+                      scheduling: FunctionResponseScheduling.SILENT,
+                    },
+                  ],
+                })
+              ).catch((e: unknown) => console.error(`[proxy] sendToolResponse error for "${fc.name}":`, e));
+            } catch (e) {
+              console.error(`[proxy] Unexpected error handling tool call "${fc.name}":`, e);
             }
-
-            console.log(`[validator] Accepted: ${result.name}`, result.args);
-
-            safeSend({
-              type: 'tool_call',
-              name: result.name,
-              args: result.args,
-            });
-
-            // NON_BLOCKING + SILENT — model keeps talking uninterrupted
-            geminiSession.sendToolResponse({
-              functionResponses: [
-                {
-                  id: fc.id,
-                  name: fc.name,
-                  response: { result: 'ok' },
-                  scheduling: FunctionResponseScheduling.SILENT,
-                },
-              ],
-            });
           }
         },
 

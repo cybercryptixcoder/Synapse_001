@@ -17,8 +17,12 @@ export default function App() {
 }
 
 function AppInner() {
-  const { addWidget, removeWidget, updateWidget } = useCanvas();
-  const { playChunk, flush } = useAudioPlayback();
+  const { addWidget, removeWidget, updateWidget, clearWidgets } = useCanvas();
+  const { playChunk, flush, stop } = useAudioPlayback();
+
+  // Track the active code viewer widget so highlight can update it
+  const codeViewerIdRef = useRef<string | null>(null);
+  const codeViewerDataRef = useRef<CodeViewerData>({ language: '', code: '' });
 
   // Track the active call stack widget ID so push/pop/overflow can mutate it
   const callStackIdRef = useRef<string | null>(null);
@@ -34,7 +38,22 @@ function AppInner() {
         // ── Code Viewer ──────────────────────────────────────────────
         case 'code_viewer_show': {
           const { language, code } = call.args as unknown as CodeViewerData;
-          addWidget('code_viewer', { language, code }, 2, 2);
+          const data: CodeViewerData = { language, code };
+          codeViewerDataRef.current = data;
+          const id = addWidget('code_viewer', data, 2, 2);
+          codeViewerIdRef.current = id;
+          break;
+        }
+
+        case 'code_viewer_highlight': {
+          if (!codeViewerIdRef.current) break;
+          const { start_line, end_line } = call.args as { start_line: number; end_line: number };
+          const updated: CodeViewerData = {
+            ...codeViewerDataRef.current,
+            highlight: start_line === 0 ? undefined : { start: start_line, end: end_line },
+          };
+          codeViewerDataRef.current = updated;
+          updateWidget(codeViewerIdRef.current, updated);
           break;
         }
 
@@ -103,7 +122,12 @@ function AppInner() {
 
   const { connect, disconnect, sendAudio, status } = useLiveSession({
     onAudioChunk: (base64) => playChunk(base64),
-    onInterrupted: () => flush(),
+    onInterrupted: () => {
+      flush();
+      clearWidgets();
+      codeViewerIdRef.current = null;
+      codeViewerDataRef.current = { language: '', code: '' };
+    },
     onToolCall: handleToolCall,
   });
 
@@ -123,8 +147,9 @@ function AppInner() {
   function handleStop() {
     stopMic();
     disconnect();
-    flush();
-    // Reset call stack state on session end
+    stop();
+    codeViewerIdRef.current = null;
+    codeViewerDataRef.current = { language: '', code: '' };
     callStackIdRef.current = null;
     callStackDataRef.current = { frames: [], overflow: false };
     frameCounterRef.current = 0;

@@ -5,9 +5,12 @@ import './CodeViewer.css';
 export interface CodeViewerData {
   language: string;
   code: string;
+  highlight?: { start: number; end: number };
 }
 
 export function CodeViewer({ data }: { data: CodeViewerData }) {
+  const hl = data.highlight;
+
   return (
     <div className="code-viewer">
       <div className="code-viewer-header">
@@ -17,6 +20,21 @@ export function CodeViewer({ data }: { data: CodeViewerData }) {
         <SyntaxHighlighter
           language={data.language}
           style={atomOneDark}
+          showLineNumbers
+          wrapLines
+          lineProps={(lineNumber) => {
+            if (hl && lineNumber >= hl.start && lineNumber <= hl.end) {
+              return {
+                style: {
+                  display: 'block',
+                  backgroundColor: 'rgba(255, 200, 0, 0.15)',
+                  borderLeft: '3px solid #ffc800',
+                  marginLeft: '-3px',
+                },
+              };
+            }
+            return { style: { display: 'block' } };
+          }}
           customStyle={{
             margin: 0,
             padding: '12px 16px',

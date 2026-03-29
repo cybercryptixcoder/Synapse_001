@@ -25,17 +25,14 @@ const REGISTRY: Record<string, ToolSpec> = {
     },
   },
 
-  // Call Stack
-  call_stack_show:     { args: {} },
-  call_stack_push: {
+  code_viewer_highlight: {
     args: {
-      function_name: { type: 'string', required: true },
-      args:          { type: 'string', required: true },
+      start_line: { type: 'number', required: true },
+      end_line:   { type: 'number', required: true },
     },
   },
-  call_stack_pop:      { args: {} },
-  call_stack_overflow: { args: {} },
-  call_stack_remove:   { args: {} },
+
+  // Call Stack — BOXED (disabled, component preserved)
 };
 
 export interface ValidatedCall {
