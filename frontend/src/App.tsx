@@ -128,7 +128,7 @@ function AppInner() {
           if (imageWidgetIdRef.current) {
             updateWidget(imageWidgetIdRef.current, data);
           } else {
-            const id = addWidget('image', data, 2, 2);
+            const id = addWidget('image', data, 1, 1);
             imageWidgetIdRef.current = id;
           }
           break;
