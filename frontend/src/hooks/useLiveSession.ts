@@ -2,16 +2,22 @@ import { useRef, useState } from 'react';
 
 export type SessionStatus = 'disconnected' | 'connecting' | 'connected';
 
+export interface ToolCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
 interface UseLiveSessionOptions {
   onAudioChunk: (base64: string, mimeType: string) => void;
   onInterrupted: () => void;
+  onToolCall: (call: ToolCall) => void;
 }
 
 /**
  * Manages the WebSocket connection to the backend proxy.
- * Routes incoming audio chunks and session signals.
+ * Routes incoming audio chunks, tool calls, and session signals.
  */
-export function useLiveSession({ onAudioChunk, onInterrupted }: UseLiveSessionOptions) {
+export function useLiveSession({ onAudioChunk, onInterrupted, onToolCall }: UseLiveSessionOptions) {
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<SessionStatus>('disconnected');
 
@@ -37,6 +43,10 @@ export function useLiveSession({ onAudioChunk, onInterrupted }: UseLiveSessionOp
               break;
             case 'interrupted':
               onInterrupted();
+              break;
+            case 'tool_call':
+              console.log('[tool_call]', msg.name, msg.args);
+              onToolCall({ name: msg.name as string, args: msg.args as Record<string, unknown> });
               break;
             case 'turn_complete':
               // No action needed yet

@@ -3,6 +3,8 @@ import express from 'express';
 import http from 'http';
 import WebSocket, { WebSocketServer } from 'ws';
 import { GoogleGenAI, Modality } from '@google/genai';
+import { TOOL_DECLARATIONS } from './tools.js';
+import { validate, isError } from './validator.js';
 
 const MODEL = 'gemini-live-2.5-flash-native-audio';
 const PORT = Number(process.env.PORT) || 3001;
@@ -16,7 +18,13 @@ const ai = new GoogleGenAI({
   location: process.env.GOOGLE_CLOUD_LOCATION ?? 'us-central1',
 });
 
-const SYSTEM_PROMPT = `You are a helpful, knowledgeable voice assistant. Keep your responses conversational and natural for spoken delivery. Be concise.`;
+const SYSTEM_PROMPT = `You are a helpful, knowledgeable voice assistant with access to a live visual canvas that appears alongside this conversation.
+
+You have canvas tools available to you. Use them freely and naturally — call them mid-sentence as soon as the relevant moment arrives in your explanation. Do not say "I'll show you some code" or "here is the code" before calling the tool. Just call it and keep talking. The canvas updates silently while you speak.
+
+When you explain code or want to illustrate something with code, call code_viewer_show immediately. Do not wait until the end of your turn.
+
+Keep your spoken responses conversational and natural for audio delivery.`;
 
 // ---------------------------------------------------------------------------
 // HTTP + WebSocket server
@@ -55,6 +63,7 @@ wss.on('connection', async (browserWs) => {
             prebuiltVoiceConfig: { voiceName: 'Aoede' },
           },
         },
+        tools: [{ functionDeclarations: TOOL_DECLARATIONS }],
       },
       callbacks: {
         onopen: () => {
@@ -82,6 +91,48 @@ wss.on('connection', async (browserWs) => {
           }
           if (message.serverContent?.interrupted) {
             safeSend({ type: 'interrupted' });
+          }
+
+          // --- Tool calls ---
+          const functionCalls = message.toolCall?.functionCalls ?? [];
+          for (const fc of functionCalls) {
+            const args = (fc.args ?? {}) as Record<string, unknown>;
+            const result = validate(fc.name as string, args);
+
+            if (isError(result)) {
+              console.warn(`[validator] Rejected call to "${fc.name}": ${result.reason}`);
+              // Send an error response back so the model isn't left hanging
+              geminiSession.sendToolResponse({
+                functionResponses: [
+                  {
+                    id: fc.id,
+                    name: fc.name,
+                    response: { error: result.reason, scheduling: 'SILENT' },
+                  },
+                ],
+              });
+              continue;
+            }
+
+            console.log(`[validator] Accepted: ${result.name}`, result.args);
+
+            // Forward validated call to browser for logging (no canvas yet)
+            safeSend({
+              type: 'tool_call',
+              name: result.name,
+              args: result.args,
+            });
+
+            // Acknowledge silently — model keeps talking uninterrupted
+            geminiSession.sendToolResponse({
+              functionResponses: [
+                {
+                  id: fc.id,
+                  name: fc.name,
+                  response: { result: 'ok', scheduling: 'SILENT' },
+                },
+              ],
+            });
           }
         },
 

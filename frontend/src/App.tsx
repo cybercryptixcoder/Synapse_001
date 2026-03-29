@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useLiveSession } from './hooks/useLiveSession';
+import { useLiveSession, type ToolCall } from './hooks/useLiveSession';
 import { useAudioIO } from './hooks/useAudioIO';
 import { useAudioPlayback } from './hooks/useAudioPlayback';
 import './App.css';
@@ -7,9 +7,15 @@ import './App.css';
 export default function App() {
   const { playChunk, flush } = useAudioPlayback();
 
+  const handleToolCall = useCallback((call: ToolCall) => {
+    // Step 2: log only. Canvas rendering comes in Step 3.
+    console.log('[canvas] tool_call received:', call.name, call.args);
+  }, []);
+
   const { connect, disconnect, sendAudio, status } = useLiveSession({
     onAudioChunk: (base64) => playChunk(base64),
     onInterrupted: () => flush(),
+    onToolCall: handleToolCall,
   });
 
   const { start: startMic, stop: stopMic, isRecording } = useAudioIO(
@@ -18,8 +24,8 @@ export default function App() {
 
   async function handleStart() {
     try {
-      await connect();   // wait for 'ready' from proxy
-      await startMic();  // then open microphone
+      await connect();
+      await startMic();
     } catch (err) {
       console.error('Failed to start session:', err);
     }
