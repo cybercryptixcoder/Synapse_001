@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useLiveSession, type ToolCall } from './hooks/useLiveSession';
 import { useAudioIO } from './hooks/useAudioIO';
 import { useAudioPlayback } from './hooks/useAudioPlayback';
@@ -6,10 +6,11 @@ import './App.css';
 
 export default function App() {
   const { playChunk, flush } = useAudioPlayback();
+  const [toolLog, setToolLog] = useState<ToolCall[]>([]);
 
   const handleToolCall = useCallback((call: ToolCall) => {
-    // Step 2: log only. Canvas rendering comes in Step 3.
     console.log('[canvas] tool_call received:', call.name, call.args);
+    setToolLog((prev) => [call, ...prev].slice(0, 10));
   }, []);
 
   const { connect, disconnect, sendAudio, status } = useLiveSession({
@@ -59,9 +60,21 @@ export default function App() {
           </button>
         </div>
 
-        {/* Canvas area — will be populated in Step 3 */}
-        <div className="canvas-placeholder">
-          <p>Canvas will appear here</p>
+        {/* Tool call debug panel */}
+        <div className="debug-panel">
+          <p className="debug-title">Tool calls received</p>
+          {toolLog.length === 0 ? (
+            <p className="debug-empty">None yet — ask the agent to show you some code</p>
+          ) : (
+            <ul className="debug-list">
+              {toolLog.map((call, i) => (
+                <li key={i} className="debug-item">
+                  <span className="debug-name">{call.name}</span>
+                  <pre className="debug-args">{JSON.stringify(call.args, null, 2)}</pre>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </main>
     </div>
