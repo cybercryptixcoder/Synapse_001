@@ -16,14 +16,26 @@ interface ToolSpec {
 }
 
 // Registry mirrors TOOL_DECLARATIONS in tools.ts.
-// Add an entry here every time a new tool is added.
 const REGISTRY: Record<string, ToolSpec> = {
+  // Code Viewer
   code_viewer_show: {
     args: {
       language: { type: 'string', required: true },
-      code: { type: 'string', required: true },
+      code:     { type: 'string', required: true },
     },
   },
+
+  // Call Stack
+  call_stack_show:     { args: {} },
+  call_stack_push: {
+    args: {
+      function_name: { type: 'string', required: true },
+      args:          { type: 'string', required: true },
+    },
+  },
+  call_stack_pop:      { args: {} },
+  call_stack_overflow: { args: {} },
+  call_stack_remove:   { args: {} },
 };
 
 export interface ValidatedCall {
@@ -35,9 +47,6 @@ export interface ValidationError {
   reason: string;
 }
 
-/**
- * Returns a ValidatedCall if the call is well-formed, or a ValidationError if not.
- */
 export function validate(
   name: string,
   args: Record<string, unknown>

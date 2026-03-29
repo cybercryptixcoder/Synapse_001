@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useCanvas } from './CanvasProvider';
 import { CodeViewer, type CodeViewerData } from '../widgets/CodeViewer';
+import { CallStack, type CallStackData } from '../widgets/CallStack';
 import './Canvas.css';
 
 export function Canvas() {
@@ -45,6 +46,8 @@ function renderWidget(type: string, data: unknown) {
   switch (type) {
     case 'code_viewer':
       return <CodeViewer data={data as CodeViewerData} />;
+    case 'call_stack':
+      return <CallStack data={data as CallStackData} />;
     default:
       return null;
   }
